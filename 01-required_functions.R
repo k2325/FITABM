@@ -1190,7 +1190,7 @@ run_model_gen <- function(number_of_agents, rn, w, threshold, n_in, dev, agent_n
   }
   
   if (abs(tail(avg_u$inst_cap_diff, 1)) <= dev){
-    write_rds(agents, paste("Data/", agent_name, "_", i, ".rds", sep = ""))
+    write_rds(agents, paste(agent_name, "_", n_in + 1, ".rds", sep = ""))
     rm(agents)
     n_pops <- n_in + 1
     cat("Successful: run ", rn, "\n")

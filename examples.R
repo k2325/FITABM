@@ -39,6 +39,8 @@ generate_populations_f(n_agents = 500, n_pop = 5, dev = 200)
 # This generates 5 populations of 500 agents, which deviate less than 200 MW from the capacity as it was in
 # October 2016 (this isn't very good - but generating 100 populations of 5000 agents which deviate < 25 MW
 # is extremely time-consuming!)
+getwd()          # => C:/Users/ksr13/Documents/FITABM になっているか確認
+dir("Data")
 
 
 # Then you can run projections the same way as historical simulations:
