@@ -588,30 +588,28 @@ calc_LCOE <- function(adpts, rn, number_of_agents) {
 }
 
 LCOE <- function(annual_cost, cap_cost, guarantee, output) {
-  cost <- 0
-  prod_elec <- 0
+  # annual_cost, cap_cost, guarantee, output は
+  # 各インストールごとのベクトルとして想定 #shuusei20251116
+  
+  cost <- rep(0, length(annual_cost))      #shuusei20251116
+  prod_elec <- rep(0, length(output))      #shuusei20251116
+  
   for (i in 1:25){
     disc_factor <- (1+r)^i 
+    
     if (i == 1) {
-      yr_cost <- annual_cost + cap_cost
+      # 1年目だけは設備費も含めたコスト #shuusei20251116
+      yr_cost <- annual_cost + cap_cost    #shuusei20251116
+    } else {
+      # 2年目以降は、保証期間内だけ annual_cost、それ以降は0 #shuusei20251116
+      yr_cost <- ifelse(i <= guarantee, annual_cost, 0)  #shuusei20251116
     }
     
-    else if (i > 1 && i <= guarantee) {
-      yr_cost <- annual_cost
-    }
-    else if (i >1 && i > guarantee) {
-      yr_cost <- 0
-    }
-    cost <- cost + yr_cost/disc_factor
-    prod_elec <- prod_elec + output/disc_factor
-    
+    cost <- cost + yr_cost/disc_factor     #shuusei20251116
+    prod_elec <- prod_elec + output/disc_factor  #shuusei20251116
   }
-  LCOE <- 1000*cost/prod_elec # pounds per MWh
-}
-
-which_owner_year <- function(x) {
-  owner_occupiers$X2[owner_occupiers$X1 == as.numeric(year(x))]
   
+  LCOE <- 1000*cost/prod_elec # pounds per MWh（各インストールごとのベクトル） #shuusei20251116
 }
 
 which_PV_cost <- function(x) {
