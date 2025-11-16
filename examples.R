@@ -25,7 +25,7 @@ results <- batch_run_func(number_of_runs = 10, number_of_agents = 500)
 
 # batch_run_func will automatically plot data and output some key results. If you want to save your data:
 
-batch_run_func(number_of_runs = 2, number_of_agents = 500, save_name = "test")
+batch_run_func(number_of_runs = 10, number_of_agents = 500, save_name = "test")
 
 
 ## Realistic future
