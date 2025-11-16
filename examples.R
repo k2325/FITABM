@@ -34,20 +34,36 @@ batch_run_func(number_of_runs = 10, number_of_agents = 500, save_name = "test")
 # However, we must first generate suitable agent populations. This is done using the function
 # generate_populations_f():
 
-generate_populations_f(n_agents = 500, n_pop = 5, dev = 200)
+generate_populations_f(n_agents = 500, n_pop = 10, dev = 200)
 
 # This generates 5 populations of 500 agents, which deviate less than 200 MW from the capacity as it was in
 # October 2016 (this isn't very good - but generating 100 populations of 5000 agents which deviate < 25 MW
 # is extremely time-consuming!)
-getwd()          # => C:/Users/ksr13/Documents/FITABM になっているか確認
-dir("Data")
 
 
+# 低所得（中央値の 80% 以下）の世帯には FiT を +5p/kWh 上乗せ
+extra_FiT_low_income <<- 0.05   # 0.05 £/kWh = 5 p/kWh
 # Then you can run projections the same way as historical simulations:
 
 load_data_f()
 
-batch_run_func_f()
+batch_run_func_f(number_of_runs = 5)
 
 # In practice, you only need to do the time-consuming part (generating the agent populations) once,
 # then use them to run whatever scenarios you're interested in.
+
+#########################シナリオ
+source("01-required_functions.R")
+source("02-run_functions.R")
+
+# 極端に高い FiT（一定）
+load_data_f(
+  FiT_type  = "linear",   # 線形だが init = final にすると一定になる
+  init_fit  = 0,         # 20 p/kWh
+  final_fit = 0,         # ずっと 20 p/kWh
+  exp_tar   = 0,       # エクスポートタリフ（好きに変更可）
+  dep_caps  = FALSE       # 上限容量なしにしたければ FALSE
+)
+
+res_high <- batch_run_func_f(number_of_runs = 5, save_name = "high_FiT")
+

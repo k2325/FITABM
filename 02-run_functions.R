@@ -510,6 +510,9 @@ run_model_f <- function(agent_name, rn, w, threshold) {
   agents <- read_rds(paste('Data/', agent_name, "_", agent_index, ".rds", sep = ""))
   number_of_agents <- length(agents)
   
+  income_median <<- median(extract(agents, "income"))      #shuusei20251116
+  low_income_cutoff <<- 0.8 * income_median                #shuusei20251116
+  
   # initial reference capacity:
   
   adopters <- agents[map(agents, "status") == 1]

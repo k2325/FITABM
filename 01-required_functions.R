@@ -285,6 +285,10 @@ initialise_vars <- function() {
 
 #------------------------- 1.2 Agent/model functions ----------------------------#
 
+# Low-income households: extra FiT (in £/kWh, default 0) #shuusei20251116
+extra_FiT_low_income <<- 0        #shuusei20251116
+low_income_cutoff   <<- NA        #shuusei20251116
+
 Household_Agent <- function(a, b, c, d) {
   # a = Y for adopter, N for non-adopter (char)
   # b = income
@@ -385,8 +389,20 @@ decide <- function(A, threshold) {
     # A is an object representing an agent
     if (A$u_tot > threshold && A$status == "N") {
       A$status[1] <- "Y"
-      if (A$inst_cap <= 4) A$FiT <- FiT_current_small
-      else A$FiT <- FiT_current_large
+      
+      # ベースとなる FiT（設備容量によって small / large を切り替え） #shuusei20251116
+      base_FiT <- if (A$inst_cap <= 4) FiT_current_small else FiT_current_large  #shuusei20251116
+      
+      # 低所得世帯向けの追加 FiT（デフォルトは 0） #shuusei20251116
+      add_FiT <- 0                                                               #shuusei20251116
+      if (!is.na(low_income_cutoff) && A$income <= low_income_cutoff) {         #shuusei20251116
+        add_FiT <- extra_FiT_low_income                                          #shuusei20251116
+      }                                                                          #shuusei20251116
+      
+      A$FiT <- base_FiT + add_FiT                                               #shuusei20251116
+
+      
+      
       A$exp_tar <- exp_tar_current
       A$date <- current_date
     }
