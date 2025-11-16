@@ -48,7 +48,8 @@ load_data <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, in
   
   
   elec_price_time <<- read_csv("Data/electricityprices.csv", col_names = F, col_types = cols())
-  elec_price_time[7,] <<- c(2016, 17.33) # projection for 2016
+  elec_price_time[7, 1] <<- 2016    # projection year 2016 #shuusei20251116
+  elec_price_time[7, 2] <<- 17.33   # projection price 2016 #shuusei20251116
   
   owner_occupiers <<- read_csv("Data/owner_occupiers.csv", col_names = F, col_types = cols()) %>% mutate(X2 = X2*1000)
   
