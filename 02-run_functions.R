@@ -7,6 +7,7 @@
 batch_run_func <- function(number_of_agents, 
                            number_of_runs, plot_u = T, plot_cost = T, plot_prod = T, save_name) {
   
+  use_low_income_bonus <<- FALSE                           #shuusei20251116
   allowed_params <- read_tsv('Data/allowed_params_1000.txt', col_names = F)
   
   sample_for_run <- allowed_params[sample(1:nrow(allowed_params), number_of_runs, replace = TRUE), ]
@@ -355,9 +356,11 @@ run_model <- function(number_of_agents, rn, w, threshold) {
 ##################################################################################
 
 #--------------------------------- Batch runs -----------------------------------#
-
 batch_run_func_f <- function(agent_name, 
-                             number_of_runs, plot_u = T, plot_cost = T, plot_prod = T, save_name) {
+                             number_of_runs, plot_u = T, plot_cost = T, plot_prod = T, save_name,
+                             low_inc_ratio = 0,              #shuusei20251116  中央所得に対する割合（例:0.8）
+                             extra_FiT_low_p = 0) {          #shuusei20251116  低所得世帯への上乗せ[p/kWh]
+
   allowed_params <- read_tsv('Data/allowed_params_1000.txt', col_names = F)
   # Set threshold and weights, electricity price
   sample_for_run <- allowed_params[sample(1:nrow(allowed_params), number_of_runs, replace = TRUE), ]
@@ -367,6 +370,10 @@ batch_run_func_f <- function(agent_name,
   
   if(missing(number_of_runs)) number_of_runs <- 100 
   
+  # 低所得世帯へのFiT上乗せ設定（未来シミュレーション専用）         #shuusei20251116
+  use_low_income_bonus <<- (low_inc_ratio > 0 && extra_FiT_low_p > 0)   #shuusei20251116
+  low_income_ratio   <<- low_inc_ratio                                  #shuusei20251116
+  extra_FiT_low      <<- extra_FiT_low_p/100    # p/kWh → £/kWh         #shuusei20251116
   
   initialise_vars() # create variables which will store output
   
@@ -510,8 +517,12 @@ run_model_f <- function(agent_name, rn, w, threshold) {
   agents <- read_rds(paste('Data/', agent_name, "_", agent_index, ".rds", sep = ""))
   number_of_agents <- length(agents)
   
-  income_median <<- median(extract(agents, "income"))      #shuusei20251116
-  low_income_cutoff <<- 0.8 * income_median                #shuusei20251116
+  # 低所得FiTボーナス用の所得カットオフを計算                       #shuusei20251116
+  if (exists("use_low_income_bonus") && isTRUE(use_low_income_bonus)) { #shuusei20251116
+    incomes <- extract(agents, "income")                                #shuusei20251116
+    median_income <- median(incomes, na.rm = TRUE)                      #shuusei20251116
+    low_income_cutoff <<- low_income_ratio * median_income              #shuusei20251116
+  }                                                                     #shuusei20251116
   
   # initial reference capacity:
   

@@ -285,10 +285,6 @@ initialise_vars <- function() {
 
 #------------------------- 1.2 Agent/model functions ----------------------------#
 
-# Low-income households: extra FiT (in £/kWh, default 0) #shuusei20251116
-extra_FiT_low_income <<- 0        #shuusei20251116
-low_income_cutoff   <<- NA        #shuusei20251116
-
 Household_Agent <- function(a, b, c, d) {
   # a = Y for adopter, N for non-adopter (char)
   # b = income
@@ -390,21 +386,24 @@ decide <- function(A, threshold) {
     if (A$u_tot > threshold && A$status == "N") {
       A$status[1] <- "Y"
       
-      # ベースとなる FiT（設備容量によって small / large を切り替え） #shuusei20251116
-      base_FiT <- if (A$inst_cap <= 4) FiT_current_small else FiT_current_large  #shuusei20251116
+      # まずベースFiTを決定                                         #shuusei20251116
+      if (A$inst_cap <= 4) {
+        base_FiT <- FiT_current_small                                 #shuusei20251116
+      } else {
+        base_FiT <- FiT_current_large                                 #shuusei20251116
+      }                                                               #shuusei20251116
       
-      # 低所得世帯向けの追加 FiT（デフォルトは 0） #shuusei20251116
-      add_FiT <- 0                                                               #shuusei20251116
-      if (!is.na(low_income_cutoff) && A$income <= low_income_cutoff) {         #shuusei20251116
-        add_FiT <- extra_FiT_low_income                                          #shuusei20251116
-      }                                                                          #shuusei20251116
+      # 未来シミュレーションかつ低所得世帯なら上乗せ                #shuusei20251116
+      eff_FiT <- base_FiT                                             #shuusei20251116
+      if (exists("use_low_income_bonus") && isTRUE(use_low_income_bonus) && #shuusei20251116
+          exists("low_income_cutoff") && !is.null(low_income_cutoff) &&     #shuusei20251116
+          !is.na(A$income) && A$income <= low_income_cutoff) {              #shuusei20251116
+        eff_FiT <- base_FiT + extra_FiT_low                           #shuusei20251116
+      }                                                               #shuusei20251116
       
-      A$FiT <- base_FiT + add_FiT                                               #shuusei20251116
-
-      
-      
+      A$FiT   <- eff_FiT                                              #shuusei20251116
       A$exp_tar <- exp_tar_current
-      A$date <- current_date
+      A$date    <- current_date
     }
   }
   return(A)
@@ -426,19 +425,27 @@ simple_PP <- function(A) {
 
 annual_return <- function(A){
   prod <- output(A$inst_cap, A$LF)
+  
+  # まずシステム容量によるベースFiTを決定                           #shuusei20251116
   if (A$inst_cap <= 4){
-    R_FiT <- prod*FiT_current_small # true for all, regardless of what's consumed/exported
-    displaced <- export <- 0.5*prod
-    R_exp <- export*exp_tar_current
-    R_sav <- displaced*elec_price
-    R <- R_FiT + R_sav + R_exp
+    base_FiT <- FiT_current_small                                       #shuusei20251116
   } else {
-    R_FiT <- prod*FiT_current_large # true for all, regardless of what's consumed/exported
-    displaced <- export <- 0.5*prod
-    R_exp <- export*exp_tar_current
-    R_sav <- displaced*elec_price
-    R <- R_FiT + R_sav + R_exp
-  }
+    base_FiT <- FiT_current_large                                       #shuusei20251116
+  }                                                                     #shuusei20251116
+  
+  # 未来シミュレーションかつ低所得世帯ならFiTを上乗せ                 #shuusei20251116
+  eff_FiT <- base_FiT                                                   #shuusei20251116
+  if (exists("use_low_income_bonus") && isTRUE(use_low_income_bonus) && #shuusei20251116
+      exists("low_income_cutoff") && !is.null(low_income_cutoff) &&     #shuusei20251116
+      !is.na(A$income) && A$income <= low_income_cutoff) {              #shuusei20251116
+    eff_FiT <- base_FiT + extra_FiT_low                                 #shuusei20251116
+  }                                                                     #shuusei20251116
+  
+  R_FiT <- prod*eff_FiT                                                 #shuusei20251116
+  displaced <- export <- 0.5*prod
+  R_exp <- export*exp_tar_current
+  R_sav <- displaced*elec_price
+  R <- R_FiT + R_sav + R_exp
 }
 
 
@@ -1097,6 +1104,7 @@ generate_populations_f <- function(n_agents, n_pop, dev, agent_name) {
 
 batch_run_func_gen <- function(w, t, number_of_agents, n_des, dev, agent_name) {
   
+  use_low_income_bonus <<- FALSE                          #shuusei20251116  （人口生成時は常に補助なし）
   # Set threshold and weights, electricity price
   if(missing(w)) w <- c(0.27, 0.25, 0.05, 0.43) # Weights: income & social, economic, capital
   

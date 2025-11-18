@@ -40,14 +40,17 @@ generate_populations_f(n_agents = 500, n_pop = 10, dev = 200)
 # October 2016 (this isn't very good - but generating 100 populations of 5000 agents which deviate < 25 MW
 # is extremely time-consuming!)
 
-
-# 低所得（中央値の 80% 以下）の世帯には FiT を +5p/kWh 上乗せ
-extra_FiT_low_income <<- 0.05   # 0.05 £/kWh = 5 p/kWh
 # Then you can run projections the same way as historical simulations:
 
 load_data_f()
 
-batch_run_func_f(number_of_runs = 5)
+batch_run_func_f(number_of_runs = 10)
+
+# 低所得世帯（中央値の80%以下）に2p/kWhの追加補助を行う例        #shuusei20251116
+batch_run_func_f(agent_name      = "agents",              # 生成したエージェント名  #shuusei20251116
+                 number_of_runs  = 5,                    # ラン数                    #shuusei20251116
+                 low_inc_ratio   = 0.8,                   # 中央所得の80%以下を低所得 #shuusei20251116
+                 extra_FiT_low_p = 2)                     # 2p/kWh 上乗せ            #shuusei20251116
 
 # In practice, you only need to do the time-consuming part (generating the agent populations) once,
 # then use them to run whatever scenarios you're interested in.
