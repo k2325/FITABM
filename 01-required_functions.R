@@ -640,7 +640,10 @@ which_PV_cost <- function(x) {
   
 }
 
-
+which_owner_year <- function(x) {                        #shuusei20251116
+  owner_occupiers$X2[owner_occupiers$X1 ==               #shuusei20251116
+                       as.numeric(year(x))][1]           #shuusei20251116
+}                                                        #shuusei20251116
 #------------------------------- 1.4 Processing ---------------------------------#
 
 append_results <- function() {
@@ -691,7 +694,17 @@ summarise_results <- function(avg_u, cost, cost_priv){
               sd_u_tot = sqrt(sum(sd_u_tot^2))/number_of_runs,
               tot_inst_cap = mean(tot_inst_cap, na.rm = TRUE), 
               frac_of_adopters = mean(frac_of_adopters, na.rm = TRUE),
-              inst_cap_diff = mean(inst_cap_diff, na.rm = TRUE))
+              inst_cap_diff = mean(inst_cap_diff, na.rm = TRUE),
+              frac_dec1  = mean(frac_dec1,  na.rm = TRUE),            #shuusei20251118
+              frac_dec2  = mean(frac_dec2,  na.rm = TRUE),            #shuusei20251118
+              frac_dec3  = mean(frac_dec3,  na.rm = TRUE),            #shuusei20251118
+              frac_dec4  = mean(frac_dec4,  na.rm = TRUE),            #shuusei20251118
+              frac_dec5  = mean(frac_dec5,  na.rm = TRUE),            #shuusei20251118
+              frac_dec6  = mean(frac_dec6,  na.rm = TRUE),            #shuusei20251118
+              frac_dec7  = mean(frac_dec7,  na.rm = TRUE),            #shuusei20251118
+              frac_dec8  = mean(frac_dec8,  na.rm = TRUE),            #shuusei20251118
+              frac_dec9  = mean(frac_dec9,  na.rm = TRUE),            #shuusei20251118
+              frac_dec10 = mean(frac_dec10, na.rm = TRUE))            #shuusei20251118
   
   avg_cost <<- cost %>% group_by(time_series) %>% summarise(annual_cost = mean(annual_cost))
   
@@ -779,6 +792,20 @@ load_plot_sim_data <- function(save_name, plot_u = T, plot_cost = T, plot_prod =
           scale_y_continuous(expand = c(0,0), limits = c(0, max(avg_u$tot_inst_cap) + 100))
   )
   
+  # デシル別導入率の推移（保存済み結果）                          #shuusei20251118
+  dec_vars <- paste0("frac_dec", 1:10)                                  #shuusei20251118
+  if (all(dec_vars %in% names(averages))) {                             #shuusei20251118
+    dec_df <- averages %>%                                              #shuusei20251118
+      select(time_series, all_of(dec_vars)) %>%                         #shuusei20251118
+      pivot_longer(cols = starts_with("frac_dec"),                      #shuusei20251118
+                   names_to = "decile", values_to = "frac") %>%         #shuusei20251118
+      mutate(decile = str_replace(decile, "frac_dec", "D"))             #shuusei20251118
+    
+    print(ggplot(dec_df) + theme_bw() +                                 #shuusei20251118
+            geom_line(aes(x = time_series, y = frac, color = decile)) + #shuusei20251118
+            ylab("Fraction of adopters by income decile") +             #shuusei20251118
+            xlab("Date"))                                               #shuusei20251118
+  }                                                                     #shuusei20251118
   
   if (plot_cost == T){
     print(ggplot() + theme_bw() + 
@@ -1412,7 +1439,17 @@ summarise_results_f <- function(avg_u, cost, cost_priv){
               u_cap = mean(mean_u_cap),
               u_tot = mean(mean_u_tot), avg_inst_cap = mean(avg_inst_cap, na.rm = TRUE),  
               tot_inst_cap = mean(tot_inst_cap, na.rm = TRUE), 
-              frac_of_adopters = mean(frac_of_adopters, na.rm = TRUE))
+              frac_of_adopters = mean(frac_of_adopters, na.rm = TRUE),
+              frac_dec1  = mean(frac_dec1,  na.rm = TRUE),            #shuusei20251118
+              frac_dec2  = mean(frac_dec2,  na.rm = TRUE),            #shuusei20251118
+              frac_dec3  = mean(frac_dec3,  na.rm = TRUE),            #shuusei20251118
+              frac_dec4  = mean(frac_dec4,  na.rm = TRUE),            #shuusei20251118
+              frac_dec5  = mean(frac_dec5,  na.rm = TRUE),            #shuusei20251118
+              frac_dec6  = mean(frac_dec6,  na.rm = TRUE),            #shuusei20251118
+              frac_dec7  = mean(frac_dec7,  na.rm = TRUE),            #shuusei20251118
+              frac_dec8  = mean(frac_dec8,  na.rm = TRUE),            #shuusei20251118
+              frac_dec9  = mean(frac_dec9,  na.rm = TRUE),            #shuusei20251118
+              frac_dec10 = mean(frac_dec10, na.rm = TRUE))            #shuusei20251118
   
   avg_cost <<- cost %>% group_by(time_series) %>% summarise(annual_cost = mean(annual_cost))
   

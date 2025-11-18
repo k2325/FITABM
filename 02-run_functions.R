@@ -109,6 +109,22 @@ batch_run_func <- function(number_of_agents,
           geom_line(data = averages, aes(x = time_series, y = tot_inst_cap), color = "black", size = 1) +
           annotate("text", x = dmy("01jul2011"), y = 2000, label = print_vars))
   
+  # デシル別導入率の推移をプロット                               #shuusei20251118
+  dec_vars <- paste0("frac_dec", 1:10)                                  #shuusei20251118
+  dec_df <- averages %>%                                                #shuusei20251118
+    select(time_series, all_of(dec_vars)) %>%                           #shuusei20251118
+    pivot_longer(cols = starts_with("frac_dec"),                        #shuusei20251118
+                 names_to = "decile", values_to = "frac") %>%           #shuusei20251118
+    mutate(decile = str_replace(decile, "frac_dec", "D"))               #shuusei20251118
+  
+  print(ggplot(dec_df) + theme_bw() +                                   #shuusei20251118
+          geom_line(aes(x = time_series, y = frac, color = decile)) +   #shuusei20251118
+          ylab("Fraction of adopters by income decile") +               #shuusei20251118
+          xlab("Date"))                                                 #shuusei20251118
+  
+  
+  
+    
   if(missing(save_name)){
     cat("\n", "Data not being saved!", "\n", sep = "")
   } else {
@@ -148,6 +164,16 @@ run_model <- function(number_of_agents, rn, w, threshold) {
   agents %<>% map(assign_LF) %>% map(assign_elec_cons) %>% map(assign_u_inc, mean_inc = mean_income) %>% 
     map(assign_soc_network, n_ag = number_of_agents, n_l = n_links)
   
+  
+  # 所得デシル（1〜10）を各エージェントに付与                      #shuusei20251118
+  incomes <- extract(agents, "income")                                   #shuusei20251118
+  dec_breaks <- quantile(incomes, probs = seq(0, 1, 0.1), na.rm = TRUE)  #shuusei20251118
+  dec_vals <- findInterval(incomes, dec_breaks, all.inside = TRUE)       #shuusei20251118
+  for (k in seq_along(agents)) {                                         #shuusei20251118
+    agents[[k]]$inc_decile <- dec_vals[k]                                #shuusei20251118
+  }                                                                      #shuusei20251118
+  
+  
   adopters <- agents[map(agents, "status") == 1]
   
   if (length(adopters) > 0){
@@ -179,8 +205,19 @@ run_model <- function(number_of_agents, rn, w, threshold) {
                       frac_of_adopters = vector(length = time_steps),
                       avg_inst_cap = vector(length = time_steps),
                       tot_inst_cap = vector(length = time_steps),
-                      inst_cap_diff = vector(length = time_steps)
+                      inst_cap_diff = vector(length = time_steps),
+                      frac_dec1  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec2  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec3  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec4  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec5  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec6  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec7  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec8  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec9  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec10 = vector(length = time_steps)           #shuusei20251118
   )
+  
   
   #---------------------------------------------------------#
   
@@ -234,6 +271,19 @@ run_model <- function(number_of_agents, rn, w, threshold) {
     
     avg_u$inst_cap_diff[i] <- deployment$real_cap[i] - 
       avg_u$tot_inst_cap[i]
+    
+    # デシル別導入率の計算                                         #shuusei20251118
+    deciles <- extract(agents, "inc_decile")                           #shuusei20251118
+    status  <- extract(agents, "status") == "Y"                        #shuusei20251118
+    for (d in 1:10) {                                                  #shuusei20251118
+      idx <- which(deciles == d)                                      #shuusei20251118
+      if (length(idx) > 0) {                                          #shuusei20251118
+        avg_u[i, paste0("frac_dec", d)] <- sum(status[idx]) / length(idx)  #shuusei20251118
+      } else {                                                        #shuusei20251118
+        avg_u[i, paste0("frac_dec", d)] <- NA                         #shuusei20251118
+      }                                                               #shuusei20251118
+    }                                                                 #shuusei20251118
+    
     
     ##### Deployment cap code - only runs if using a deployment cap scenario
     if (run_w_cap == TRUE){
@@ -483,6 +533,20 @@ batch_run_func_f <- function(agent_name,
           geom_line(data = averages, aes(x = time_series, y = tot_inst_cap), color = "black", size = 1) +
           annotate("text", x = dmy("01jul2011"), y = 2000, label = print_vars))
   
+  # デシル別導入率の推移をプロット（未来シナリオ）               #shuusei20251118
+  dec_vars <- paste0("frac_dec", 1:10)                                  #shuusei20251118
+  dec_df <- averages %>%                                                #shuusei20251118
+    select(time_series, all_of(dec_vars)) %>%                           #shuusei20251118
+    pivot_longer(cols = starts_with("frac_dec"),                        #shuusei20251118
+                 names_to = "decile", values_to = "frac") %>%           #shuusei20251118
+    mutate(decile = str_replace(decile, "frac_dec", "D"))               #shuusei20251118
+  
+  print(ggplot(dec_df) + theme_bw() +                                   #shuusei20251118
+          geom_line(aes(x = time_series, y = frac, color = decile)) +   #shuusei20251118
+          ylab("Fraction of adopters by income decile") +               #shuusei20251118
+          xlab("Date"))                                                 #shuusei20251118
+  
+  
   if(missing(save_name)){
     cat("\n", "Data not being saved!", "\n", sep = "")
   } else {
@@ -516,6 +580,24 @@ run_model_f <- function(agent_name, rn, w, threshold) {
   
   agents <- read_rds(paste('Data/', agent_name, "_", agent_index, ".rds", sep = ""))
   number_of_agents <- length(agents)
+  
+  
+  incomes <- extract(agents, "income")                                   #shuusei20251118
+  
+  # 低所得FiTボーナス用の所得カットオフを計算                       #shuusei20251118
+  if (exists("use_low_income_bonus") && isTRUE(use_low_income_bonus)) {  #shuusei20251118
+    median_income <- median(incomes, na.rm = TRUE)                       #shuusei20251118
+    low_income_cutoff <<- low_income_ratio * median_income               #shuusei20251118
+  }                                                                      #shuusei20251118
+  
+  # 所得デシル（1〜10）を各エージェントに付与                      #shuusei20251118
+  dec_breaks <- quantile(incomes, probs = seq(0, 1, 0.1), na.rm = TRUE)  #shuusei20251118
+  dec_vals <- findInterval(incomes, dec_breaks, all.inside = TRUE)       #shuusei20251118
+  for (k in seq_along(agents)) {                                         #shuusei20251118
+    agents[[k]]$inc_decile <- dec_vals[k]                                #shuusei20251118
+  }                                                                      #shuusei20251118
+  
+  
   
   # 低所得FiTボーナス用の所得カットオフを計算                       #shuusei20251116
   if (exists("use_low_income_bonus") && isTRUE(use_low_income_bonus)) { #shuusei20251116
@@ -552,7 +634,17 @@ run_model_f <- function(agent_name, rn, w, threshold) {
                       sd_u_tot = vector(length = time_steps),
                       frac_of_adopters = vector(length = time_steps),
                       avg_inst_cap = vector(length = time_steps),
-                      tot_inst_cap = vector(length = time_steps)
+                      tot_inst_cap = vector(length = time_steps),
+                      frac_dec1  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec2  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec3  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec4  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec5  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec6  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec7  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec8  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec9  = vector(length = time_steps),          #shuusei20251118
+                      frac_dec10 = vector(length = time_steps)           #shuusei20251118
   )
   
   
@@ -606,6 +698,18 @@ run_model_f <- function(agent_name, rn, w, threshold) {
       avg_u$avg_inst_cap[i] <- NA
       avg_u$tot_inst_cap[i] <- 0
     }
+    
+    # デシル別導入率の計算                                         #shuusei20251118
+    deciles <- extract(agents, "inc_decile")                           #shuusei20251118
+    status  <- extract(agents, "status") == "Y"                        #shuusei20251118
+    for (d in 1:10) {                                                  #shuusei20251118
+      idx <- which(deciles == d)                                      #shuusei20251118
+      if (length(idx) > 0) {                                          #shuusei20251118
+        avg_u[i, paste0("frac_dec", d)] <- sum(status[idx]) / length(idx)  #shuusei20251118
+      } else {                                                        #shuusei20251118
+        avg_u[i, paste0("frac_dec", d)] <- NA                         #shuusei20251118
+      }                                                               #shuusei20251118
+    }                                                                 #shuusei20251118
     
     ##### Deployment cap code - only runs if using a deployment cap scenario
     if (run_w_cap == TRUE){
