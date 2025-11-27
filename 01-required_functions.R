@@ -439,30 +439,10 @@ utilities <- function(A, w, ags) {                                     #shuusei2
   return(A)                                                            #shuusei20251125
 }                                                                      #shuusei20251125
 
-decide <- function(A, threshold, threshold_Q = NULL) {                  #shuusei20251126
+decide <- function(A, threshold) {
   if (A$status == "N"){
-    ## どの threshold を使うか決める                                   #shuusei20251126
-    th_use <- threshold                                                 #shuusei20251126
-    if (!is.null(threshold_Q) && length(threshold_Q) == 5 &&            #shuusei20251126
-        !is.null(A$inc_decile) && !is.na(A$inc_decile)) {              #shuusei20251126
-      dec <- A$inc_decile                                               #shuusei20251126
-      ## デシル 1-2→Q1, 3-4→Q2, 5-6→Q3, 7-8→Q4, 9-10→Q5              #shuusei20251126
-      q_index <- if (dec <= 2) {                                        #shuusei20251126
-        1                                                               #shuusei20251126
-      } else if (dec <= 4) {                                            #shuusei20251126
-        2                                                               #shuusei20251126
-      } else if (dec <= 6) {                                            #shuusei20251126
-        3                                                               #shuusei20251126
-      } else if (dec <= 8) {                                            #shuusei20251126
-        4                                                               #shuusei20251126
-      } else {                                                          #shuusei20251126
-        5                                                               #shuusei20251126
-      }                                                                 #shuusei20251126
-      th_use <- threshold_Q[q_index]                                   #shuusei20251126
-    }                                                                   #shuusei20251126
-    
     # A is an object representing an agent
-    if (A$u_tot > th_use && A$status == "N") {                          #shuusei20251126
+    if (A$u_tot > threshold && A$status == "N") {
       A$status[1] <- "Y"
       
       # まずベースFiTを決定                                         #shuusei20251116
@@ -820,16 +800,6 @@ calc_quintile_cap <- function(cap_dec_vec) {                            #shuusei
   return(q_caps)                                                        #shuusei20251121
 }                                                                       #shuusei20251121
 
-
-# 所得クインタイルごとの threshold ベクトルを生成                #shuusei20251126
-threshold_from_t_alpha <- function(t_base, alpha) {                     #shuusei20251126
-  ## q = 1..5 に対して t_Q(q) = t_base + alpha*(6 - q)               #shuusei20251126
-  t_vec <- t_base + alpha * (6 - (1:5))                                 #shuusei20251126
-  ## [0,1] にクリップ（極端な値の暴走を防ぐ）                        #shuusei20251126
-  t_vec <- pmin(pmax(t_vec, 0), 1)                                      #shuusei20251126
-  names(t_vec) <- paste0("Q", 1:5)                                      #shuusei20251126
-  return(t_vec)                                                         #shuusei20251126
-}
 
 load_plot_sim_data <- function(save_name, plot_u = T, plot_cost = T, plot_prod = T){
   load_use_cap <- F

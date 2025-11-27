@@ -23,43 +23,43 @@ target_cap_Q <- c(                                                      #shuusei
   Q5 = 512270                                                           #shuusei20251121
 ) / 1000                                                                #shuusei20251121   # 単位: MW
 
-## 3. 1 パラメータセットに対するサマリー統計量                        #shuusei20251126
-simulate_summary <- function(w, t_base, alpha, 
-                             n_agents = n_agents_abc) {                #shuusei20251126
-  ## クインタイル別 threshold を生成                                  #shuusei20251126
-  t_Q <- threshold_from_t_alpha(t_base, alpha)                          #shuusei20251126
+## 3. 1 パラメータセットに対するサマリー統計量                        #shuusei20251121
+simulate_summary <- function(w, t, n_agents = n_agents_abc) {           #shuusei20251118
+  res <- run_model(number_of_agents = n_agents, rn = 1,                 #shuusei20251121
+                   w = w, threshold = t)                                #shuusei20251121
   
-  res <- run_model(number_of_agents = n_agents, rn = 1,                 #shuusei20251126
-                   w = w, threshold = mean(t_Q),                        #shuusei20251126
-                   threshold_Q = t_Q)                                   #shuusei20251126
+  avg_u_run <- res[[1]]                                                 #shuusei20251121
   
-  avg_u_run <- res[[1]]
+  ## 3-1. 2010〜2015/9/30 までの全国累積容量の誤差                    #shuusei20251121
+  cutoff <- dmy("01oct2015")                                           #shuusei20251121
+  idx <- which(avg_u_run$time_series <= cutoff)                         #shuusei20251121
   
-  ## --- ここから下は元の simulate_summary と同じ ---                  #shuusei20251126
-  cutoff <- dmy("01oct2015")
-  idx <- which(avg_u_run$time_series <= cutoff)
+  dep_model <- avg_u_run$tot_inst_cap[idx]                              #shuusei20251121
+  dep_real  <- deployment$real_cap[idx]                                 #shuusei20251121
   
-  dep_model <- avg_u_run$tot_inst_cap[idx]
-  dep_real  <- deployment$real_cap[idx]
+  err_dep <- mean(abs(dep_model - dep_real))                            #shuusei20251121
   
-  err_dep <- mean(abs(dep_model - dep_real))
+  ## 3-2. 2015/9/30 時点の Q1〜Q5 CAPACITY（MW）                      #shuusei20251121
+  row_q <- which(avg_u_run$time_series == cutoff)                       #shuusei20251121
+  if (length(row_q) != 1) stop("cutoff date not found in avg_u_run")    #shuusei20251121
   
-  row_q <- which(avg_u_run$time_series == cutoff)
-  if (length(row_q) != 1) stop("cutoff date not found in avg_u_run")
+  cap_dec <- as.numeric(avg_u_run[row_q,                                #shuusei20251121
+                                  paste0("cap_dec", 1:10)])             #shuusei20251121
+  cap_Q_model <- calc_quintile_cap(cap_dec)                             #shuusei20251121
   
-  cap_dec <- as.numeric(avg_u_run[row_q, paste0("cap_dec", 1:10)])
-  cap_Q_model <- calc_quintile_cap(cap_dec)
+  ## 3-2a. 全く導入がない（またはほぼゼロ）のケースに強いペナルティ    #shuusei20251122
+  total_cap_Q <- sum(cap_Q_model, na.rm = TRUE)                         #shuusei20251122
+  if (total_cap_Q < 1e-6) {                                             #shuusei20251122
+    # 完全に導入ゼロの run は ABC から事実上除外したいので            #shuusei20251122
+    # err_dep, err_Q を非常に大きな値にして返す                        #shuusei20251122
+    return(c(err_dep = 1e6, err_Q = 1e6))                               #shuusei20251122
+  }                                                                     #shuusei20251122
   
-  total_cap_Q <- sum(cap_Q_model, na.rm = TRUE)
-  if (total_cap_Q < 1e-6) {
-    return(c(err_dep = 1e6, err_Q = 1e6))
-  }
+  rel_err_Q <- abs(cap_Q_model - target_cap_Q) / target_cap_Q           #shuusei20251121
+  err_Q <- mean(rel_err_Q)                                              #shuusei20251121
   
-  rel_err_Q <- abs(cap_Q_model - target_cap_Q) / target_cap_Q
-  err_Q <- mean(rel_err_Q)
-  
-  c(err_dep = err_dep, err_Q = err_Q)
-}                                                                       #shuusei20251126
+  c(err_dep = err_dep, err_Q = err_Q)                                   #shuusei20251121
+}                                                                       #shuusei20251121
 
 ## 4. ABC 設定（ガウス事前分布）                                      #shuusei20251122
 set.seed(123)                                                           #shuusei20251122
@@ -71,7 +71,7 @@ n_agents_abc  <- 500                                                  #shuusei20
 
 ## 4-1. 事前分布の中心を探すための「予備スキャン」                     #shuusei20251122
 use_auto_prior   <- TRUE                                                #shuusei20251122  # TRUE: 一様分布から自動で prior の平均を作る
-n_scan           <- 500                                                 #shuusei20251122  # 予備スキャンで回す本数
+n_scan           <- 250                                                 #shuusei20251122  # 予備スキャンで回す本数
 top_k_for_prior  <- 5                                                  #shuusei20251122  # 距離が小さい上位何本から prior 平均を作るか
 
 if (use_auto_prior) {                                                   #shuusei20251122
@@ -86,47 +86,38 @@ if (use_auto_prior) {                                                   #shuusei
   
   ## 4-1-1. pblapply で n_scan 本を並列に予備スキャン                   #shuusei20251122
   
-  scan_list <- pblapply(1:n_scan, cl = cl_scan, FUN = function(i) {   #shuusei20251126
-    ## U(0,1) から w_inc, w_soc, w_ec, t_base, alpha をサンプリング    #shuusei20251126
-    repeat {                                                          #shuusei20251126
-      draw <- runif(5)                                                #shuusei20251126
-      names(draw) <- c("w_inc","w_soc","w_ec","t_base","alpha")       #shuusei20251126
+  scan_list <- pblapply(1:n_scan, cl = cl_scan, FUN = function(i) {     #shuusei20251122
+    ## 一様分布 U(0,1) から w_inc, w_soc, w_ec, t をサンプリング        #shuusei20251126
+    ## w_inc + w_soc + w_ec ≤ 1 を満たすまで引き直し，残りを w_cap に   #shuusei20251126
+    repeat {                                                            #shuusei20251126
+      draw <- runif(4)                                                  #shuusei20251126
+      names(draw) <- c("w_inc","w_soc","w_ec","t")                      #shuusei20251126
       
-      ## 3つの効用重みの和が 1 以下                                   #shuusei20251126
-      sum_w3 <- draw["w_inc"] + draw["w_soc"] + draw["w_ec"]          #shuusei20251126
-      if (sum_w3 >= 1) next                                           #shuusei20251126
-      
-      ## alpha は大きすぎないよう軽く制約（例: <= 0.3）              #shuusei20251126
-      if (draw["alpha"] < -0.3 || draw["alpha"] > 0.3) next              #shuusei20251126
-      
-      break                                                           #shuusei20251126
-    }                                                                 #shuusei20251126
+      if (draw["w_inc"] + draw["w_soc"] + draw["w_ec"] >= 1) next       #shuusei20251126
+      break                                                             #shuusei20251126
+    }                                                                   #shuusei20251126
     
-    w_inc_tmp  <- draw["w_inc"]                                       #shuusei20251126
-    w_soc_tmp  <- draw["w_soc"]                                       #shuusei20251126
-    w_ec_tmp   <- draw["w_ec"]                                        #shuusei20251126
-    w_cap_tmp  <- 1 - (w_inc_tmp + w_soc_tmp + w_ec_tmp)              #shuusei20251126
-    t_base_tmp <- draw["t_base"]                                      #shuusei20251126
-    alpha_tmp  <- draw["alpha"]                                       #shuusei20251126
+    w_inc_tmp <- draw["w_inc"]                                          #shuusei20251126
+    w_soc_tmp <- draw["w_soc"]                                          #shuusei20251126
+    w_ec_tmp  <- draw["w_ec"]                                           #shuusei20251126
+    w_cap_tmp <- 1 - (w_inc_tmp + w_soc_tmp + w_ec_tmp)                 #shuusei20251126
+    w_vec_tmp <- c(w_inc_tmp, w_soc_tmp, w_ec_tmp, w_cap_tmp)           #shuusei20251126
+    t_tmp <- draw["t"]                                                  #shuusei20251126
     
-    w_vec_tmp <- c(w_inc_tmp, w_soc_tmp, w_ec_tmp, w_cap_tmp)         #shuusei20251126
-    t_Q_tmp   <- threshold_from_t_alpha(t_base_tmp, alpha_tmp)        #shuusei20251126
+    ## この θ でサマリー統計（誤差）を計算                              #shuusei20251122
+    summ_tmp <- simulate_summary(w_vec_tmp, t_tmp,                      #shuusei20251122
+                                 n_agents = n_agents_scan)             #shuusei20251122
     
-    summ_tmp <- simulate_summary(w_vec_tmp, t_base_tmp, alpha_tmp,    #shuusei20251126
-                                 n_agents = n_agents_scan)            #shuusei20251126
+    cat(sprintf("[SCAN] %3d / %3d  err_dep = %.3f  err_Q = %.3f\n",     #shuusei20251122
+                i, n_scan, summ_tmp["err_dep"], summ_tmp["err_Q"]))     #shuusei20251122
     
-    cat(sprintf("[SCAN] %3d / %3d  err_dep = %.3f  err_Q = %.3f\n",   #shuusei20251126
-                i, n_scan, summ_tmp["err_dep"], summ_tmp["err_Q"]))   #shuusei20251126
-    
-    c(w_inc   = w_inc_tmp,                                            #shuusei20251126
-      w_soc   = w_soc_tmp,                                            #shuusei20251126
-      w_ec    = w_ec_tmp,                                             #shuusei20251126
-      t_base  = t_base_tmp,                                           #shuusei20251126
-      alpha   = alpha_tmp,                                            #shuusei20251126
-      err_dep = unname(summ_tmp["err_dep"]),                          #shuusei20251126
-      err_Q   = unname(summ_tmp["err_Q"]))                            #shuusei20251126
-  })
-  
+    c(w_inc   = w_inc_tmp,                                              #shuusei20251126
+      w_soc   = w_soc_tmp,                                              #shuusei20251126
+      w_ec    = w_ec_tmp,                                               #shuusei20251126
+      t       = t_tmp,                                                  #shuusei20251126
+      err_dep = unname(summ_tmp["err_dep"]),                            #shuusei20251126
+      err_Q   = unname(summ_tmp["err_Q"]))                              #shuusei20251126
+  })                                                                    #shuusei20251122
   
   stopCluster(cl_scan)                                                  #shuusei20251122
   
@@ -147,49 +138,45 @@ if (use_auto_prior) {                                                   #shuusei
   best_scan <- scan_df[order(scan_df$dist), ][1:top_k_for_prior, ]      #shuusei20251122
   
   ## 4-1-5. その平均を prior の平均として採用                           #shuusei20251122
-  prior_mean <- c(                                                       #shuusei20251126
-    w_inc   = mean(best_scan$w_inc),                                     #shuusei20251126
-    w_soc   = mean(best_scan$w_soc),                                     #shuusei20251126
-    w_ec    = mean(best_scan$w_ec),                                      #shuusei20251126
-    t_base  = mean(best_scan$t_base),                                    #shuusei20251126
-    alpha   = mean(best_scan$alpha)                                      #shuusei20251126
-  )                                                                      #shuusei20251126
+  prior_mean <- c(                                                       #shuusei20251122
+    w_inc = mean(best_scan$w_inc),                                      #shuusei20251126
+    w_soc = mean(best_scan$w_soc),                                      #shuusei20251126
+    w_ec  = mean(best_scan$w_ec),                                       #shuusei20251126
+    t     = mean(best_scan$t)                                           #shuusei20251122
+  )                                                                     #shuusei20251122
   
-  prior_sd <- c(                                                         #shuusei20251126
-    w_inc   = 0.10,                                                      #shuusei20251126
-    w_soc   = 0.10,                                                      #shuusei20251126
-    w_ec    = 0.10,                                                      #shuusei20251126
-    t_base  = 0.10,                                                      #shuusei20251126
-    alpha   = 0.05                                                       #shuusei20251126
-  )                                                                      #shuusei20251126
+  prior_sd <- c(                                                         #shuusei20251122
+    w_inc = 0.10,                                                       #shuusei20251125
+    w_soc = 0.10,                                                       #shuusei20251122
+    w_ec  = 0.10,                                                       #shuusei20251122
+    t     = 0.10                                                        #shuusei20251122
+  )                                                                     #shuusei20251122
   
   cat("\n[SCAN] 予備スキャンから得られた prior の平均:\n")               #shuusei20251122
   print(prior_mean)                                                     #shuusei20251122
   
 } else {                                                                 #shuusei20251122
   ## 4-2. 自分で決め打ちの prior 平均を入れる場合はこちらを編集         #shuusei20251122
-  prior_mean <- c(                                                       #shuusei20251126
-    w_inc  = 0.25,                                                       #shuusei20251126
-    w_soc  = 0.25,                                                       #shuusei20251126
-    w_ec   = 0.25,                                                       #shuusei20251126
-    t_base = 0.50,                                                       #shuusei20251126
-    alpha  = 0.10                                                        #shuusei20251126
-  )                                                                      #shuusei20251126
+  prior_mean <- c(                                                       #shuusei20251122
+    w_inc = 0.25,   # 3 つの効用をだいたい均等にスタート              #shuusei20251125
+    w_soc = 0.25,                                                       #shuusei20251122
+    w_ec  = 0.25,                                                       #shuusei20251122
+    t     = 0.50                                                        #shuusei20251122
+  )                                                                     #shuusei20251122
   
-  prior_sd <- c(                                                         #shuusei20251126
-    w_inc  = 0.10,                                                       #shuusei20251126
-    w_soc  = 0.10,                                                       #shuusei20251126
-    w_ec   = 0.10,                                                       #shuusei20251126
-    t_base = 0.10,                                                       #shuusei20251126
-    alpha  = 0.05                                                        #shuusei20251126
-  )                                                                      #shuusei20251126
+  prior_sd <- c(                                                         #shuusei20251122
+    w_inc = 0.10,                                                       #shuusei20251125
+    w_soc = 0.10,                                                       #shuusei20251122
+    w_ec  = 0.10,                                                       #shuusei20251122
+    t     = 0.10                                                        #shuusei20251122
+  )                                                                     #shuusei20251122
 }
 
 
-param_draws <- matrix(NA_real_, nrow = n_sim, ncol = 6,               #shuusei20251126
-                      dimnames = list(NULL,                            #shuusei20251126
-                                      c("w_inc","w_soc","w_ec",        #shuusei20251126
-                                        "w_cap","t_base","alpha")))    #shuusei20251126
+param_draws <- matrix(NA_real_, nrow = n_sim, ncol = 5,                 #shuusei20251121
+                      dimnames = list(NULL,                             #shuusei20251121
+                                      c("w_inc","w_soc","w_ec",         #shuusei20251121
+                                        "w_cap","t")))                  #shuusei20251121
 err_dep_all <- numeric(n_sim)                                          #shuusei20251121
 err_Q_all   <- numeric(n_sim)                                          #shuusei20251121
 distances   <- numeric(n_sim)                                          #shuusei20251121
@@ -216,50 +203,44 @@ clusterEvalQ(cl, {                                                      #shuusei
 clusterSetRNGStream(cl, 123)                                            #shuusei20251121
 
 ## parLapply → pblapply に変更して、進捗 & 各 run の誤差を表示        #shuusei20251121
-sim_results <- pblapply(1:n_sim, cl = cl, FUN = function(i) {          #shuusei20251126
-  ## 5 変数 (w_inc,w_soc,w_ec,t_base,alpha) を正規事前からサンプリング #shuusei20251126
-  repeat {                                                             #shuusei20251126
-    draw <- rnorm(5,                                                   #shuusei20251126
-                  mean = prior_mean[c("w_inc","w_soc","w_ec",          #shuusei20251126
-                                      "t_base","alpha")],             #shuusei20251126
-                  sd   = prior_sd[c("w_inc","w_soc","w_ec",            #shuusei20251126
-                                    "t_base","alpha")])               #shuusei20251126
-    names(draw) <- c("w_inc","w_soc","w_ec","t_base","alpha")          #shuusei20251126
+sim_results <- pblapply(1:n_sim, cl = cl, FUN = function(i) {           #shuusei20251121
+  ## 5-1. w_inc, w_soc, w_ec, t を正規事前からサンプリング             #shuusei20251126
+  repeat {                                                              #shuusei20251126
+    draw <- rnorm(4,                                                    #shuusei20251126
+                  mean = prior_mean[c("w_inc","w_soc","w_ec","t")],     #shuusei20251126
+                  sd   = prior_sd[c("w_inc","w_soc","w_ec","t")])       #shuusei20251126
+    names(draw) <- c("w_inc","w_soc","w_ec","t")                        #shuusei20251126
     
     ## 0〜1 の範囲チェック                                            #shuusei20251126
-    if (any(draw[c("w_inc","w_soc","w_ec","t_base")] < 0) ||           #shuusei20251126
-        any(draw[c("w_inc","w_soc","w_ec","t_base")] > 1)) next        #shuusei20251126
+    if (any(draw < 0) || any(draw > 1)) next                            #shuusei20251126
     
-    sum_w3 <- draw["w_inc"] + draw["w_soc"] + draw["w_ec"]             #shuusei20251126
-    if (sum_w3 >= 1) next                                              #shuusei20251126
+    ## 3つの効用重みの合計が 1 以下かチェック                         #shuusei20251126
+    sum_3 <- draw["w_inc"] + draw["w_soc"] + draw["w_ec"]               #shuusei20251126
+    if (sum_3 >= 1) next                                                #shuusei20251126
     
-    if (draw["alpha"] < -0.3 || draw["alpha"] > 0.3) next                 #shuusei20251126
-    
-    break                                                              #shuusei20251126
-  }                                                                    #shuusei20251126
+    break                                                               #shuusei20251126
+  }                                                                     #shuusei20251126
   
-  w_inc  <- draw["w_inc"]                                              #shuusei20251126
-  w_soc  <- draw["w_soc"]                                              #shuusei20251126
-  w_ec   <- draw["w_ec"]                                               #shuusei20251126
-  t_base <- draw["t_base"]                                             #shuusei20251126
-  alpha  <- draw["alpha"]                                              #shuusei20251126
-  w_cap  <- 1 - (w_inc + w_soc + w_ec)                                 #shuusei20251126
+  w_inc <- draw["w_inc"]                                                #shuusei20251126
+  w_soc <- draw["w_soc"]                                                #shuusei20251126
+  w_ec  <- draw["w_ec"]                                                 #shuusei20251126
+  w_cap <- 1 - sum_3                                                    #shuusei20251126
   
-  w_vec  <- c(w_inc, w_soc, w_ec, w_cap)                               #shuusei20251126
-  t_Q    <- threshold_from_t_alpha(t_base, alpha)                      #shuusei20251126
+  w_vec <- c(w_inc, w_soc, w_ec, w_cap)                                 #shuusei20251126
+  t_val <- draw["t"]                                                    #shuusei20251126
   
-  summ <- simulate_summary(w_vec, t_base, alpha,                       #shuusei20251126
-                           n_agents = n_agents_abc)                    #shuusei20251126
+  ## 各パラメータセットのサマリー統計量                             #shuusei20251121
+  summ <- simulate_summary(w_vec, t_val, n_agents = n_agents_abc)       #shuusei20251118
   
-  cat(sprintf("[ABC] i = %3d / %3d  err_dep = %.3f  err_Q = %.3f\n",   #shuusei20251126
-              i, n_sim, summ["err_dep"], summ["err_Q"]))               #shuusei20251126
+  cat(sprintf("[ABC] i = %3d / %3d  err_dep = %.3f  err_Q = %.3f\n",    #shuusei20251121
+              i, n_sim, summ["err_dep"], summ["err_Q"]))                #shuusei20251121
   
-  list(                                                                 #shuusei20251126
-    err_dep = unname(summ["err_dep"]),                                 #shuusei20251126
-    err_Q   = unname(summ["err_Q"]),                                   #shuusei20251126
-    params  = c(w_inc, w_soc, w_ec, w_cap, t_base, alpha)              #shuusei20251126
-  )                                                                     #shuusei20251126
-})
+  list(                                                                  #shuusei20251121
+    err_dep = unname(summ["err_dep"]),                                  #shuusei20251121
+    err_Q   = unname(summ["err_Q"]),                                    #shuusei20251121
+    params  = c(w_inc, w_soc, w_ec, w_cap, t_val)                       #shuusei20251126
+  )                                                                      #shuusei20251121
+})                                                                       #shuusei20251121
 
 stopCluster(cl)                                                         #shuusei20251121
 

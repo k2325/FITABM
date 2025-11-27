@@ -17,35 +17,21 @@ batch_run_func <- function(number_of_agents,
   
   initialise_vars() # create variables which will store output
   
-  for (i1 in 1:number_of_runs) {                                      #shuusei20251126
-    w <- unlist(sample_for_run[i1, 1:4])                              #shuusei20251126
+  for (i1 in 1:number_of_runs) {
+    w <- unlist(sample_for_run[i1, 1:4])
+    threshold <- unlist(sample_for_run[i1, 5])
+    if (run_w_cap == TRUE) { # Reset to original values for new run 
+      FiT <<- FiT_0
+      dep_cap <<- dep_cap_0
+    }
     
-    ## allowed_params が 6 列 (w_inc,w_soc,w_ec,w_cap,t_base,alpha) の場合と、
-    ## 旧来の 5 列 (w1..4, t) の場合の両方に対応                        #shuusei20251126
-    if (ncol(sample_for_run) >= 6) {                                  #shuusei20251126
-      t_base  <- as.numeric(sample_for_run[i1, 5])                    #shuusei20251126
-      alpha   <- as.numeric(sample_for_run[i1, 6])                    #shuusei20251126
-      threshold_Q <- threshold_from_t_alpha(t_base, alpha)            #shuusei20251126
-      threshold    <- mean(threshold_Q)                               #shuusei20251126
-    } else {                                                          #shuusei20251126
-      t_base      <- as.numeric(sample_for_run[i1, 5])                #shuusei20251126
-      alpha       <- NA                                               #shuusei20251126
-      threshold   <- t_base                                           #shuusei20251126
-      threshold_Q <- NULL                                             #shuusei20251126
-    }                                                                 #shuusei20251126
+    cat(i1, w, threshold, "\n")
     
-    if (run_w_cap == TRUE) {                                          #shuusei20251126
-      FiT <<- FiT_0                                                   #shuusei20251126
-      dep_cap <<- dep_cap_0                                           #shuusei20251126
-    }                                                                 #shuusei20251126
+    all_res_rn <<- run_model(number_of_agents, i1, w, threshold) # run the model once 
     
-    cat(i1, w, threshold, "\n")                                       #shuusei20251126
+    append_results() # add results of current run to previous results
     
-    ## クインタイル別 threshold_Q を run_model に渡す                  #shuusei20251126
-    all_res_rn <<- run_model(number_of_agents, i1, w, threshold,      #shuusei20251126
-                             threshold_Q = threshold_Q)                #shuusei20251126
     
-    append_results()                                                  #shuusei20251126
   }
   
   rm(all_res_rn, current_date, envir = .GlobalEnv)
@@ -114,16 +100,7 @@ batch_run_func <- function(number_of_agents,
             geom_line(data = avg_FiT, aes(x=time_series, y = FiT), size = 1))
   }
   
-  if (!is.na(alpha)) {                                                #shuusei20251126
-    print_vars <- paste("w = ", w[1], w[2], w[3], w[4],               #shuusei20251126
-                        ", t_base =", round(t_base, 3),               #shuusei20251126
-                        ", alpha =",  round(alpha, 3),                #shuusei20251126
-                        ", n_agents =", number_of_agents)             #shuusei20251126
-  } else {                                                            #shuusei20251126
-    print_vars <- paste("w = ", w[1], w[2], w[3], w[4],               #shuusei20251126
-                        ", t =", round(threshold, 3),                 #shuusei20251126
-                        ", n_agents =", number_of_agents)             #shuusei20251126
-  }                                                                   #shuusei20251126
+  print_vars <- paste("w = ", w[1], w[2], w[3], w[4], ", t =", threshold,", n_agents =", number_of_agents)
   
   print(ggplot() + theme_bw() + 
           geom_line(data = deployment, aes(x = time_series, y = real_cap), color = "blue", size = 1) + 
@@ -208,8 +185,7 @@ batch_run_func <- function(number_of_agents,
 
 #------------------------------- Individual runs --------------------------------#
 
-run_model <- function(number_of_agents, rn, w, threshold, 
-                      threshold_Q = NULL) {                             #shuusei20251126
+run_model <- function(number_of_agents, rn, w, threshold) {
   
   # Set up some parameters
   
@@ -315,12 +291,8 @@ run_model <- function(number_of_agents, rn, w, threshold,
     elec_price <<- elec_price_time[[elec_index, 2]]/100
     n_owners <<- owner_occupiers[[elec_index, 2]]
     
-    agents <- agents %>%                                           #shuusei20251126
-      map(assign_inst_cap) %>%                                     #shuusei20251126
-      map(utilities, w = w, ags = agents) %>%                      #shuusei20251126
-      map(decide,                                                  #shuusei20251126
-          threshold   = threshold,                                 #shuusei20251126
-          threshold_Q = threshold_Q)                               #shuusei20251126
+    agents <- agents %>% map(assign_inst_cap) %>% map(utilities, w = w, ags = agents) %>% 
+      map(decide, threshold = threshold)
     
     
     adopters <- agents[map(agents, "status") == 1]
@@ -787,11 +759,8 @@ run_model_f <- function(agent_name, rn, w, threshold) {
     n_owners <<- owner_occupiers[[elec_index, 2]]
     
     
-    agents <- agents %>% 
-      map(assign_inst_cap) %>% 
-      map(utilities, w = w, ags = agents) %>% 
-      map(decide, threshold = threshold)                             #shuusei20251126
-    # ↑ threshold_Q は渡さない（デフォルト NULL のまま）
+    agents <- agents %>% map(assign_inst_cap) %>% map(utilities, w = w, ags = agents) %>% 
+      map(decide, threshold = threshold)
     
     
     adopters <- agents[map(agents, "status") == 1]
