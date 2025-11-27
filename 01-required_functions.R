@@ -340,7 +340,7 @@ assign_elec_cons <- function(A) {
 }
 
 assign_u_inc <- function(A, mean_inc) {
-  A$u_inc <- 1/(1+exp((mean_inc-A$income)*0.0002))
+  A$u_inc <- 1/(1+exp((mean_inc-A$income)*0.0002)) #shuusei20251124
   return(A)
 }
 
@@ -368,17 +368,76 @@ assign_inst_cap <- function(A) {
   return(A)
 }
 
+# 所得クインタイルごとの外生的な平均容量[kW]                     #shuusei20251126
+quintile_avg_cap_kW <<- c(                                             #shuusei20251126
+  Q1 = 2.67,                                                           #shuusei20251126
+  Q2 = 2.96,                                                           #shuusei20251126
+  Q3 = 3.15,                                                           #shuusei20251126
+  Q4 = 3.37,                                                           #shuusei20251126
+  Q5 = 3.36                                                            #shuusei20251126
+)                                                                      #shuusei20251126
 
-utilities <- function(A, w, ags) {
-  # A is an object representing an agent
-  pp <- simple_PP(A)
-  A$u_ec <- (20-pp)/19
-  A$u_soc <- soc_utility(A, ags)
-  A$u_cap <- cap_utility(A)
-  A$u_tot <- w[1]*A$u_inc + w[2]*A$u_soc + w[3]*A$u_ec +  w[4]*A$u_cap
+# デシル→クインタイル容量に変換して inst_cap を外生的にセット      #shuusei20251126
+assign_inst_cap_quintile <- function(A) {                              #shuusei20251126
+  if (A$status == "N") {                                               #shuusei20251126
+    dec <- A$inc_decile                                                #shuusei20251126
+    
+    if (is.null(dec) || is.na(dec)) {                                  #shuusei20251126
+      # inc_decile が無い場合は保険として元のルールを使う            #shuusei20251126
+      return(assign_inst_cap(A))                                       #shuusei20251126
+    }                                                                  #shuusei20251126
+    
+    # デシル1-2→Q1, 3-4→Q2, 5-6→Q3, 7-8→Q4, 9-10→Q5                #shuusei20251126
+    q_index <- if (dec <= 2) {                                         #shuusei20251126
+      1                                                                #shuusei20251126
+    } else if (dec <= 4) {                                             #shuusei20251126
+      2                                                                #shuusei20251126
+    } else if (dec <= 6) {                                             #shuusei20251126
+      3                                                                #shuusei20251126
+    } else if (dec <= 8) {                                             #shuusei20251126
+      4                                                                #shuusei20251126
+    } else {                                                           #shuusei20251126
+      5                                                                #shuusei20251126
+    }                                                                  #shuusei20251126
+    
+    A$inst_cap <- quintile_avg_cap_kW[q_index]                         #shuusei20251126
+  }                                                                    #shuusei20251126
   
-  return(A)
-}
+  return(A)                                                            #shuusei20251126
+}                                                                      #shuusei20251126
+
+# 所得効用を使うかどうかのフラグ（デフォルト OFF）           #shuusei20251125
+use_income_utility <<- TRUE                                       #shuusei20251125
+use_capital_utility <<- TRUE                                      #shuusei20251125  # 資本効用は使わない
+
+utilities <- function(A, w, ags) {                                     #shuusei20251125
+  # A is an object representing an agent                                #shuusei20251125
+  pp <- simple_PP(A)                                                   #shuusei20251125
+  A$u_ec  <- (20-pp)/19                                                #shuusei20251125
+  A$u_soc <- soc_utility(A, ags)                                       #shuusei20251125
+  A$u_cap <- cap_utility(A)                                            #shuusei20251125
+  
+  # 所得効用を使うかどうか                                           #shuusei20251125
+  if (exists("use_income_utility") && isTRUE(use_income_utility)) {    #shuusei20251125
+    inc_term <- w[1] * A$u_inc                                         #shuusei20251125
+  } else {                                                             #shuusei20251125
+    inc_term <- 0                                                      #shuusei20251125
+  }                                                                    #shuusei20251125
+  
+  # 資本効用を使うかどうか                                           #shuusei20251125
+  if (exists("use_capital_utility") && isTRUE(use_capital_utility)) {  #shuusei20251125
+    cap_term <- w[4] * A$u_cap                                         #shuusei20251125
+  } else {                                                             #shuusei20251125
+    cap_term <- 0                                                      #shuusei20251125
+  }                                                                    #shuusei20251125
+  
+  A$u_tot <- inc_term +                                                #shuusei20251125
+    w[2] * A$u_soc +                                                   #shuusei20251125
+    w[3] * A$u_ec  +                                                   #shuusei20251125
+    cap_term                                                           #shuusei20251125
+  
+  return(A)                                                            #shuusei20251125
+}                                                                      #shuusei20251125
 
 decide <- function(A, threshold) {
   if (A$status == "N"){
@@ -464,7 +523,7 @@ soc_utility <- function(A, ags) {
 }
 
 cap_utility <- function(A) {
-  u_cap <- 1/(1+exp(-(0.2*A$income-A$inst_cap*kW_price_current)*0.0007))
+  u_cap <- 1/(1+exp(-(0.4*A$income-A$inst_cap*kW_price_current)*0.0007))
 }
 
 #---------------------------- 1.3 Cost calculation ------------------------------#
@@ -704,13 +763,46 @@ summarise_results <- function(avg_u, cost, cost_priv){
               frac_dec7  = mean(frac_dec7,  na.rm = TRUE),            #shuusei20251118
               frac_dec8  = mean(frac_dec8,  na.rm = TRUE),            #shuusei20251118
               frac_dec9  = mean(frac_dec9,  na.rm = TRUE),            #shuusei20251118
-              frac_dec10 = mean(frac_dec10, na.rm = TRUE))            #shuusei20251118
+              frac_dec10 = mean(frac_dec10, na.rm = TRUE),            #shuusei20251118
+              cap_dec1   = mean(cap_dec1,   na.rm = TRUE),   #shuusei20251121
+              cap_dec2   = mean(cap_dec2,   na.rm = TRUE),   #shuusei20251121
+              cap_dec3   = mean(cap_dec3,   na.rm = TRUE),   #shuusei20251121
+              cap_dec4   = mean(cap_dec4,   na.rm = TRUE),   #shuusei20251121
+              cap_dec5   = mean(cap_dec5,   na.rm = TRUE),   #shuusei20251121
+              cap_dec6   = mean(cap_dec6,   na.rm = TRUE),   #shuusei20251121
+              cap_dec7   = mean(cap_dec7,   na.rm = TRUE),   #shuusei20251121
+              cap_dec8   = mean(cap_dec8,   na.rm = TRUE),   #shuusei20251121
+              cap_dec9   = mean(cap_dec9,   na.rm = TRUE),   #shuusei20251121
+<<<<<<< HEAD
+              cap_dec10  = mean(cap_dec10,  na.rm = TRUE))   #shuusei20251121
+=======
+              cap_dec10  = mean(cap_dec10,  na.rm = TRUE),   #shuusei20251121
+              avg_cap_Q1 = mean(avg_cap_Q1, na.rm = TRUE),   #shuusei20251122
+              avg_cap_Q2 = mean(avg_cap_Q2, na.rm = TRUE),   #shuusei20251122
+              avg_cap_Q3 = mean(avg_cap_Q3, na.rm = TRUE),   #shuusei20251122
+              avg_cap_Q4 = mean(avg_cap_Q4, na.rm = TRUE),   #shuusei20251122
+              avg_cap_Q5 = mean(avg_cap_Q5, na.rm = TRUE))    #shuusei20251122
+>>>>>>> a09381741b50bdc64a79b2d8ddd02b1dbb2c8e53
+  
   
   avg_cost <<- cost %>% group_by(time_series) %>% summarise(annual_cost = mean(annual_cost))
   
   avg_cost_priv <<- cost_priv %>% group_by(time_series) %>% summarise(cum_cost = mean(cum_cost))
 }
 
+
+# デシル別容量（cap_dec1〜10）から SES 五分位別容量を計算       #shuusei20251121
+calc_quintile_cap <- function(cap_dec_vec) {                            #shuusei20251121
+  stopifnot(length(cap_dec_vec) == 10)                                  #shuusei20251121
+  q_caps <- c(                                                          #shuusei20251121
+    Q1 = sum(cap_dec_vec[1:2],  na.rm = TRUE),                          #shuusei20251121
+    Q2 = sum(cap_dec_vec[3:4],  na.rm = TRUE),                          #shuusei20251121
+    Q3 = sum(cap_dec_vec[5:6],  na.rm = TRUE),                          #shuusei20251121
+    Q4 = sum(cap_dec_vec[7:8],  na.rm = TRUE),                          #shuusei20251121
+    Q5 = sum(cap_dec_vec[9:10], na.rm = TRUE)                           #shuusei20251121
+  )                                                                     #shuusei20251121
+  return(q_caps)                                                        #shuusei20251121
+}                                                                       #shuusei20251121
 
 
 load_plot_sim_data <- function(save_name, plot_u = T, plot_cost = T, plot_prod = T){
@@ -792,20 +884,60 @@ load_plot_sim_data <- function(save_name, plot_u = T, plot_cost = T, plot_prod =
           scale_y_continuous(expand = c(0,0), limits = c(0, max(avg_u$tot_inst_cap) + 100))
   )
   
-  # デシル別導入率の推移（保存済み結果）                          #shuusei20251118
+  # デシル別導入率の推移（保存済み結果）                          #shuusei202511122
   dec_vars <- paste0("frac_dec", 1:10)                                  #shuusei20251118
   if (all(dec_vars %in% names(averages))) {                             #shuusei20251118
     dec_df <- averages %>%                                              #shuusei20251118
       select(time_series, all_of(dec_vars)) %>%                         #shuusei20251118
       pivot_longer(cols = starts_with("frac_dec"),                      #shuusei20251118
                    names_to = "decile", values_to = "frac") %>%         #shuusei20251118
-      mutate(decile = str_replace(decile, "frac_dec", "D"))             #shuusei20251118
+      mutate(decile = str_replace(decile, "frac_dec", "D")) %>%         #shuusei20251118
+      mutate(decile = factor(decile,                                    #shuusei20251122
+                             levels = paste0("D", 10:1)))               #shuusei20251122
     
     print(ggplot(dec_df) + theme_bw() +                                 #shuusei20251118
             geom_line(aes(x = time_series, y = frac, color = decile)) + #shuusei20251118
             ylab("Fraction of adopters by income decile") +             #shuusei20251118
             xlab("Date"))                                               #shuusei20251118
+    
+    # クインタイル別導入率の推移（保存済み結果）                  #shuusei20251125
+    quint_df <- averages %>%                                            #shuusei20251125
+      transmute(                                                        #shuusei20251125
+        time_series,                                                    #shuusei20251125
+        Q1 = rowMeans(cbind(frac_dec1,  frac_dec2),  na.rm = TRUE),     #shuusei20251125
+        Q2 = rowMeans(cbind(frac_dec3,  frac_dec4),  na.rm = TRUE),     #shuusei20251125
+        Q3 = rowMeans(cbind(frac_dec5,  frac_dec6),  na.rm = TRUE),     #shuusei20251125
+        Q4 = rowMeans(cbind(frac_dec7,  frac_dec8),  na.rm = TRUE),     #shuusei20251125
+        Q5 = rowMeans(cbind(frac_dec9,  frac_dec10), na.rm = TRUE)      #shuusei20251125
+      ) %>%                                                             #shuusei20251125
+      pivot_longer(cols = starts_with("Q"),                             #shuusei20251125
+                   names_to = "quintile", values_to = "frac")          #shuusei20251125
+    
+    print(ggplot(quint_df) + theme_bw() +                               #shuusei20251125
+            geom_line(aes(x = time_series, y = frac, color = quintile)) + #shuusei20251125
+            ylab("Fraction of adopters by income quintile") +           #shuusei20251125
+            xlab("Date"))                                               #shuusei20251125
+    
   }                                                                     #shuusei20251118
+  
+  # クインタイル別「累積容量(MW)」の推移（保存済み結果）        #shuusei20251125
+  quint_cap_df <- averages %>%                                       #shuusei20251125
+    transmute(                                                       #shuusei20251125
+      time_series,                                                   #shuusei20251125
+      Q1 = cap_dec1 + cap_dec2,                                      #shuusei20251125
+      Q2 = cap_dec3 + cap_dec4,                                      #shuusei20251125
+      Q3 = cap_dec5 + cap_dec6,                                      #shuusei20251125
+      Q4 = cap_dec7 + cap_dec8,                                      #shuusei20251125
+      Q5 = cap_dec9 + cap_dec10                                      #shuusei20251125
+    ) %>%                                                            #shuusei20251125
+    pivot_longer(cols = starts_with("Q"),                            #shuusei20251125
+                 names_to = "quintile", values_to = "cap_MW")       #shuusei20251125
+  
+  print(ggplot(quint_cap_df) + theme_bw() +                          #shuusei20251125
+          geom_line(aes(x = time_series, y = cap_MW,                 #shuusei20251125
+                        color = quintile)) +                         #shuusei20251125
+          ylab("Cumulative capacity (MW) by income quintile") +      #shuusei20251125
+          xlab("Date"))                                              #shuusei20251125
   
   if (plot_cost == T){
     print(ggplot() + theme_bw() + 
