@@ -17,21 +17,35 @@ batch_run_func <- function(number_of_agents,
   
   initialise_vars() # create variables which will store output
   
-  for (i1 in 1:number_of_runs) {
-    w <- unlist(sample_for_run[i1, 1:4])
-    threshold <- unlist(sample_for_run[i1, 5])
-    if (run_w_cap == TRUE) { # Reset to original values for new run 
-      FiT <<- FiT_0
-      dep_cap <<- dep_cap_0
-    }
+  for (i1 in 1:number_of_runs) {                                      #shuusei20251126
+    w <- unlist(sample_for_run[i1, 1:4])                              #shuusei20251126
     
-    cat(i1, w, threshold, "\n")
+    ## allowed_params が 6 列 (w_inc,w_soc,w_ec,w_cap,t_base,alpha) の場合と、
+    ## 旧来の 5 列 (w1..4, t) の場合の両方に対応                        #shuusei20251126
+    if (ncol(sample_for_run) >= 6) {                                  #shuusei20251126
+      t_base  <- as.numeric(sample_for_run[i1, 5])                    #shuusei20251126
+      alpha   <- as.numeric(sample_for_run[i1, 6])                    #shuusei20251126
+      threshold_Q <- threshold_from_t_alpha(t_base, alpha)            #shuusei20251126
+      threshold    <- mean(threshold_Q)                               #shuusei20251126
+    } else {                                                          #shuusei20251126
+      t_base      <- as.numeric(sample_for_run[i1, 5])                #shuusei20251126
+      alpha       <- NA                                               #shuusei20251126
+      threshold   <- t_base                                           #shuusei20251126
+      threshold_Q <- NULL                                             #shuusei20251126
+    }                                                                 #shuusei20251126
     
-    all_res_rn <<- run_model(number_of_agents, i1, w, threshold) # run the model once 
+    if (run_w_cap == TRUE) {                                          #shuusei20251126
+      FiT <<- FiT_0                                                   #shuusei20251126
+      dep_cap <<- dep_cap_0                                           #shuusei20251126
+    }                                                                 #shuusei20251126
     
-    append_results() # add results of current run to previous results
+    cat(i1, w, threshold, "\n")                                       #shuusei20251126
     
+    ## クインタイル別 threshold_Q を run_model に渡す                  #shuusei20251126
+    all_res_rn <<- run_model(number_of_agents, i1, w, threshold,      #shuusei20251126
+                             threshold_Q = threshold_Q)                #shuusei20251126
     
+    append_results()                                                  #shuusei20251126
   }
   
   rm(all_res_rn, current_date, envir = .GlobalEnv)
@@ -100,7 +114,16 @@ batch_run_func <- function(number_of_agents,
             geom_line(data = avg_FiT, aes(x=time_series, y = FiT), size = 1))
   }
   
-  print_vars <- paste("w = ", w[1], w[2], w[3], w[4], ", t =", threshold,", n_agents =", number_of_agents)
+  if (!is.na(alpha)) {                                                #shuusei20251126
+    print_vars <- paste("w = ", w[1], w[2], w[3], w[4],               #shuusei20251126
+                        ", t_base =", round(t_base, 3),               #shuusei20251126
+                        ", alpha =",  round(alpha, 3),                #shuusei20251126
+                        ", n_agents =", number_of_agents)             #shuusei20251126
+  } else {                                                            #shuusei20251126
+    print_vars <- paste("w = ", w[1], w[2], w[3], w[4],               #shuusei20251126
+                        ", t =", round(threshold, 3),                 #shuusei20251126
+                        ", n_agents =", number_of_agents)             #shuusei20251126
+  }                                                                   #shuusei20251126
   
   print(ggplot() + theme_bw() + 
           geom_line(data = deployment, aes(x = time_series, y = real_cap), color = "blue", size = 1) + 
@@ -109,20 +132,57 @@ batch_run_func <- function(number_of_agents,
           geom_line(data = averages, aes(x = time_series, y = tot_inst_cap), color = "black", size = 1) +
           annotate("text", x = dmy("01jul2011"), y = 2000, label = print_vars))
   
-  # デシル別導入率の推移をプロット                               #shuusei20251118
+  # デシル別導入率の推移をプロット                               #shuusei20251122
   dec_vars <- paste0("frac_dec", 1:10)                                  #shuusei20251118
   dec_df <- averages %>%                                                #shuusei20251118
     select(time_series, all_of(dec_vars)) %>%                           #shuusei20251118
     pivot_longer(cols = starts_with("frac_dec"),                        #shuusei20251118
                  names_to = "decile", values_to = "frac") %>%           #shuusei20251118
-    mutate(decile = str_replace(decile, "frac_dec", "D"))               #shuusei20251118
+    mutate(decile = str_replace(decile, "frac_dec", "D")) %>%           #shuusei20251118
+    mutate(decile = factor(decile,                                      #shuusei20251122
+                           levels = paste0("D", 10:1)))                 #shuusei20251122
   
   print(ggplot(dec_df) + theme_bw() +                                   #shuusei20251118
           geom_line(aes(x = time_series, y = frac, color = decile)) +   #shuusei20251118
           ylab("Fraction of adopters by income decile") +               #shuusei20251118
           xlab("Date"))                                                 #shuusei20251118
   
+  # クインタイル別導入率の推移をプロット                          #shuusei20251125
+  quint_df <- averages %>%                                              #shuusei20251125
+    transmute(                                                          #shuusei20251125
+      time_series,                                                      #shuusei20251125
+      Q1 = rowMeans(cbind(frac_dec1,  frac_dec2),  na.rm = TRUE),       #shuusei20251125
+      Q2 = rowMeans(cbind(frac_dec3,  frac_dec4),  na.rm = TRUE),       #shuusei20251125
+      Q3 = rowMeans(cbind(frac_dec5,  frac_dec6),  na.rm = TRUE),       #shuusei20251125
+      Q4 = rowMeans(cbind(frac_dec7,  frac_dec8),  na.rm = TRUE),       #shuusei20251125
+      Q5 = rowMeans(cbind(frac_dec9,  frac_dec10), na.rm = TRUE)        #shuusei20251125
+    ) %>%                                                               #shuusei20251125
+    pivot_longer(cols = starts_with("Q"),                               #shuusei20251125
+                 names_to = "quintile", values_to = "frac")             #shuusei20251125
   
+  print(ggplot(quint_df) + theme_bw() +                                 #shuusei20251125
+          geom_line(aes(x = time_series, y = frac, color = quintile)) + #shuusei20251125
+          ylab("Fraction of adopters by income quintile") +             #shuusei20251125
+          xlab("Date"))                                                 #shuusei20251125
+  
+  # クインタイル別「累積容量(MW)」の推移をプロット                 #shuusei20251125
+  quint_cap_df <- averages %>%                                         #shuusei20251125
+    transmute(                                                         #shuusei20251125
+      time_series,                                                     #shuusei20251125
+      Q1 = cap_dec1 + cap_dec2,                                        #shuusei20251125
+      Q2 = cap_dec3 + cap_dec4,                                        #shuusei20251125
+      Q3 = cap_dec5 + cap_dec6,                                        #shuusei20251125
+      Q4 = cap_dec7 + cap_dec8,                                        #shuusei20251125
+      Q5 = cap_dec9 + cap_dec10                                        #shuusei20251125
+    ) %>%                                                              #shuusei20251125
+    pivot_longer(cols = starts_with("Q"),                              #shuusei20251125
+                 names_to = "quintile", values_to = "cap_MW")          #shuusei20251125
+  
+  print(ggplot(quint_cap_df) + theme_bw() +                            #shuusei20251125
+          geom_line(aes(x = time_series, y = cap_MW,                   #shuusei20251125
+                        color = quintile)) +                           #shuusei20251125
+          ylab("Cumulative capacity (MW) by income quintile") +        #shuusei20251125
+          xlab("Date"))                                                #shuusei20251125
   
     
   if(missing(save_name)){
@@ -148,7 +208,8 @@ batch_run_func <- function(number_of_agents,
 
 #------------------------------- Individual runs --------------------------------#
 
-run_model <- function(number_of_agents, rn, w, threshold) {
+run_model <- function(number_of_agents, rn, w, threshold, 
+                      threshold_Q = NULL) {                             #shuusei20251126
   
   # Set up some parameters
   
@@ -215,7 +276,22 @@ run_model <- function(number_of_agents, rn, w, threshold) {
                       frac_dec7  = vector(length = time_steps),          #shuusei20251118
                       frac_dec8  = vector(length = time_steps),          #shuusei20251118
                       frac_dec9  = vector(length = time_steps),          #shuusei20251118
-                      frac_dec10 = vector(length = time_steps)           #shuusei20251118
+                      frac_dec10 = vector(length = time_steps),           #shuusei20251118
+                      cap_dec1   = vector(length = time_steps),   #shuusei20251121
+                      cap_dec2   = vector(length = time_steps),   #shuusei20251121
+                      cap_dec3   = vector(length = time_steps),   #shuusei20251121
+                      cap_dec4   = vector(length = time_steps),   #shuusei20251121
+                      cap_dec5   = vector(length = time_steps),   #shuusei20251121
+                      cap_dec6   = vector(length = time_steps),   #shuusei20251121
+                      cap_dec7   = vector(length = time_steps),   #shuusei20251121
+                      cap_dec8   = vector(length = time_steps),   #shuusei20251121
+                      cap_dec9   = vector(length = time_steps),   #shuusei20251121
+                      cap_dec10  = vector(length = time_steps),   #shuusei20251121
+                      avg_cap_Q1 = vector(length = time_steps),   #shuusei20251122
+                      avg_cap_Q2 = vector(length = time_steps),   #shuusei20251122
+                      avg_cap_Q3 = vector(length = time_steps),   #shuusei20251122
+                      avg_cap_Q4 = vector(length = time_steps),   #shuusei20251122
+                      avg_cap_Q5 = vector(length = time_steps)    #shuusei20251122
   )
   
   
@@ -239,8 +315,12 @@ run_model <- function(number_of_agents, rn, w, threshold) {
     elec_price <<- elec_price_time[[elec_index, 2]]/100
     n_owners <<- owner_occupiers[[elec_index, 2]]
     
-    agents <- agents %>% map(assign_inst_cap) %>% map(utilities, w = w, ags = agents) %>% 
-      map(decide, threshold = threshold)
+    agents <- agents %>%                                           #shuusei20251126
+      map(assign_inst_cap) %>%                                     #shuusei20251126
+      map(utilities, w = w, ags = agents) %>%                      #shuusei20251126
+      map(decide,                                                  #shuusei20251126
+          threshold   = threshold,                                 #shuusei20251126
+          threshold_Q = threshold_Q)                               #shuusei20251126
     
     
     adopters <- agents[map(agents, "status") == 1]
@@ -272,18 +352,61 @@ run_model <- function(number_of_agents, rn, w, threshold) {
     avg_u$inst_cap_diff[i] <- deployment$real_cap[i] - 
       avg_u$tot_inst_cap[i]
     
-    # デシル別導入率の計算                                         #shuusei20251118
-    deciles <- extract(agents, "inc_decile")                           #shuusei20251118
-    status  <- extract(agents, "status") == "Y"                        #shuusei20251118
-    for (d in 1:10) {                                                  #shuusei20251118
-      idx <- which(deciles == d)                                      #shuusei20251118
-      if (length(idx) > 0) {                                          #shuusei20251118
-        avg_u[i, paste0("frac_dec", d)] <- sum(status[idx]) / length(idx)  #shuusei20251118
-      } else {                                                        #shuusei20251118
-        avg_u[i, paste0("frac_dec", d)] <- NA                         #shuusei20251118
-      }                                                               #shuusei20251118
-    }                                                                 #shuusei20251118
+    # デシル別導入率とデシル別累積容量（MW）の計算               #shuusei20251121
+    deciles   <- extract(agents, "inc_decile")                         #shuusei20251121
+    status    <- extract(agents, "status") == "Y"                      #shuusei20251121
+    inst_caps <- extract(agents, "inst_cap")                           #shuusei20251121
     
+    for (d in 1:10) {                                                  #shuusei20251121
+      idx_all   <- which(deciles == d)                                 #shuusei20251121
+      idx_adopt <- which(deciles == d & status)                        #shuusei20251121
+      
+      # 導入率（そのデシルのうち Y の割合）                         #shuusei20251121
+      if (length(idx_all) > 0) {                                       #shuusei20251121
+        avg_u[i, paste0("frac_dec", d)] <-                             #shuusei20251121
+          sum(status[idx_all]) / length(idx_all)                       #shuusei20251121
+      } else {                                                         #shuusei20251121
+        avg_u[i, paste0("frac_dec", d)] <- NA                          #shuusei20251121
+      }                                                                #shuusei20251121
+      
+      # そのデシルの「累積容量（MW）」                              #shuusei20251121
+      if (length(idx_adopt) > 0) {                                     #shuusei20251121
+        cap_d <- sum(inst_caps[idx_adopt], na.rm = TRUE) *             #shuusei20251121
+          n_owners/(1000*number_of_agents)                      #shuusei20251121
+      } else {                                                         #shuusei20251121
+        cap_d <- 0                                                     #shuusei20251121
+      }                                                                #shuusei20251121
+      
+      avg_u[i, paste0("cap_dec", d)] <- cap_d                          #shuusei20251121
+    }                                                                  #shuusei20251121
+    
+    
+    # 所得五分位(Q1〜Q5)ごとの「導入世帯1戸あたり平均容量[kW]」   #shuusei20251122
+    # Q1: デシル1-2（最も貧しい層）、Q5: デシル9-10（最も裕福な層） #shuusei20251122
+    for (q in 1:5) {                                                   #shuusei20251122
+      if (q == 1) {                                                    #shuusei20251122
+        dec_group <- 1:2                                               #shuusei20251122
+      } else if (q == 2) {                                             #shuusei20251122
+        dec_group <- 3:4                                               #shuusei20251122
+      } else if (q == 3) {                                             #shuusei20251122
+        dec_group <- 5:6                                               #shuusei20251122
+      } else if (q == 4) {                                             #shuusei20251122
+        dec_group <- 7:8                                               #shuusei20251122
+      } else {                                                         #shuusei20251122
+        dec_group <- 9:10                                              #shuusei20251122
+      }                                                                #shuusei20251122
+      
+      # この五分位に属し、かつ導入しているエージェントだけ抽出      #shuusei20251122
+      idx_adopt_q <- which(deciles %in% dec_group & status)           #shuusei20251122
+      
+      if (length(idx_adopt_q) > 0) {                                   #shuusei20251122
+        # inst_cap は kW なので、その平均が「導入世帯1戸あたり容量」  #shuusei20251122
+        avg_u[i, paste0("avg_cap_Q", q)] <-                            #shuusei20251122
+          mean(inst_caps[idx_adopt_q], na.rm = TRUE)                   #shuusei20251122
+      } else {                                                         #shuusei20251122
+        avg_u[i, paste0("avg_cap_Q", q)] <- NA                         #shuusei20251122
+      }                                                                #shuusei20251122
+    }                                                                  #shuusei20251122
     
     ##### Deployment cap code - only runs if using a deployment cap scenario
     if (run_w_cap == TRUE){
@@ -533,13 +656,15 @@ batch_run_func_f <- function(agent_name,
           geom_line(data = averages, aes(x = time_series, y = tot_inst_cap), color = "black", size = 1) +
           annotate("text", x = dmy("01jul2011"), y = 2000, label = print_vars))
   
-  # デシル別導入率の推移をプロット（未来シナリオ）               #shuusei20251118
+  # デシル別導入率の推移をプロット（未来シナリオ）               #shuusei20251122
   dec_vars <- paste0("frac_dec", 1:10)                                  #shuusei20251118
   dec_df <- averages %>%                                                #shuusei20251118
     select(time_series, all_of(dec_vars)) %>%                           #shuusei20251118
     pivot_longer(cols = starts_with("frac_dec"),                        #shuusei20251118
                  names_to = "decile", values_to = "frac") %>%           #shuusei20251118
-    mutate(decile = str_replace(decile, "frac_dec", "D"))               #shuusei20251118
+    mutate(decile = str_replace(decile, "frac_dec", "D")) %>%           #shuusei20251118
+    mutate(decile = factor(decile,                                      #shuusei20251122
+                           levels = paste0("D", 10:1)))                 #shuusei20251122
   
   print(ggplot(dec_df) + theme_bw() +                                   #shuusei20251118
           geom_line(aes(x = time_series, y = frac, color = decile)) +   #shuusei20251118
@@ -598,14 +723,7 @@ run_model_f <- function(agent_name, rn, w, threshold) {
   }                                                                      #shuusei20251118
   
   
-  
-  # 低所得FiTボーナス用の所得カットオフを計算                       #shuusei20251116
-  if (exists("use_low_income_bonus") && isTRUE(use_low_income_bonus)) { #shuusei20251116
-    incomes <- extract(agents, "income")                                #shuusei20251116
-    median_income <- median(incomes, na.rm = TRUE)                      #shuusei20251116
-    low_income_cutoff <<- low_income_ratio * median_income              #shuusei20251116
-  }                                                                     #shuusei20251116
-  
+
   # initial reference capacity:
   
   adopters <- agents[map(agents, "status") == 1]
@@ -669,8 +787,11 @@ run_model_f <- function(agent_name, rn, w, threshold) {
     n_owners <<- owner_occupiers[[elec_index, 2]]
     
     
-    agents <- agents %>% map(assign_inst_cap) %>% map(utilities, w = w, ags = agents) %>% 
-      map(decide, threshold = threshold)
+    agents <- agents %>% 
+      map(assign_inst_cap) %>% 
+      map(utilities, w = w, ags = agents) %>% 
+      map(decide, threshold = threshold)                             #shuusei20251126
+    # ↑ threshold_Q は渡さない（デフォルト NULL のまま）
     
     
     adopters <- agents[map(agents, "status") == 1]
