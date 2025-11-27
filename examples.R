@@ -76,6 +76,7 @@ batch_run_func_f(agent_name      = "agents",              # 生成したエー�
 load_data_f( FiT_type  = "real_f_ext")
 
 
+
 # 実データの average capacity (kW) の時系列だけ取り出す(10/1を見る)
 deployment_avg <- deployment %>%
   dplyr::select(time_series, avg_cap)
@@ -86,3 +87,5 @@ deployment_real <- deployment %>%
   dplyr::select(time_series, real_cap)
 deployment_real
 
+read_tsv("Data/prior_selected_params_with_err.txt")
+read_tsv("Data/allowed_params_quintile_with_err.txt")

@@ -126,7 +126,7 @@ batch_run_func <- function(number_of_agents,
   
   
   
-    
+  
   if(missing(save_name)){
     cat("\n", "Data not being saved!", "\n", sep = "")
   } else {
@@ -139,9 +139,9 @@ batch_run_func <- function(number_of_agents,
     if (run_w_cap == TRUE) write_rds(FiT_levels, paste(save_name, "_FiT_levels.rds", sep = ""))
   }
   
-    to_return <- list(avg_u, cost, cost_priv, LCOE_data, LCOE_avg, FiT)
-    
-    if (run_w_cap == TRUE) to_return <- list(avg_u, cost, cost_priv, LCOE_data, LCOE_avg, FiT, FiT_levels)
+  to_return <- list(avg_u, cost, cost_priv, LCOE_data, LCOE_avg, FiT)
+  
+  if (run_w_cap == TRUE) to_return <- list(avg_u, cost, cost_priv, LCOE_data, LCOE_avg, FiT, FiT_levels)
   
   return(to_return)
   
@@ -438,11 +438,11 @@ batch_run_func_f <- function(agent_name,
                              number_of_runs, plot_u = T, plot_cost = T, plot_prod = T, save_name,
                              low_inc_ratio = 0,              #shuusei20251116  中央所得に対する割合（例:0.8）
                              extra_FiT_low_p = 0) {          #shuusei20251116  低所得世帯への上乗せ[p/kWh]
-
+  
   allowed_params <- read_tsv('Data/allowed_params_1000.txt', col_names = F)
   # Set threshold and weights, electricity price
   sample_for_run <- allowed_params[sample(1:nrow(allowed_params), number_of_runs, replace = TRUE), ]
-
+  
   if(missing(agent_name)) agent_name <- "agents"
   number_of_agents <- length(read_rds(paste('Data/', agent_name, "_1.rds", sep = "")))
   
@@ -628,7 +628,7 @@ run_model_f <- function(agent_name, rn, w, threshold) {
   }                                                                      #shuusei20251118
   
   
-
+  
   # initial reference capacity:
   
   adopters <- agents[map(agents, "status") == 1]

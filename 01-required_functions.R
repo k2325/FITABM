@@ -117,7 +117,7 @@ load_data <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, in
   
   rm(mean, median, i, means, medians)
   
- 
+  
   #---------------------------------------------------------#
   # Real deployment data
   if(exists("deployment")) {

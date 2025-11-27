@@ -18,7 +18,7 @@ load_data()                                                             #shuusei
 target_cap_Q <- c(                                                      #shuusei20251121
   Q1 = 288900,                                                          #shuusei20251121
   Q2 = 318017,                                                          #shuusei20251121
-  Q3 = 425882,                                                          #shuusei20251121
+  Q3 = 452882,                                                          #shuusei20251121
   Q4 = 547935,                                                          #shuusei20251121
   Q5 = 512266                                                           #shuusei20251121
 ) / 1000                                                                #shuusei20251121   # 単位: MW
@@ -62,6 +62,7 @@ simulate_summary <- function(w, t, n_agents = n_agents_abc) {           #shuusei
   
   c(err_dep = err_dep, err_Q = err_Q)
 }
+
 
 ## 4. ABC 設定（ガウス事前分布）                                      #shuusei20251122
 set.seed(123)                                                           #shuusei20251122
@@ -134,6 +135,14 @@ if (use_auto_prior) {                                                   #shuusei
   
   ## 4-1-4. 距離の小さい上位 top_k_for_prior 本だけを抽出               #shuusei20251122
   best_scan <- scan_df[order(scan_df$dist), ][1:top_k_for_prior, ]      #shuusei20251122
+  
+  ## 4-1-4b. 予備スキャンで採用されたパラメータと誤差を保存            #shuusei20251127
+  prior_selected_params <- best_scan %>%                                #shuusei20251127
+    dplyr::select(w_inc, w_soc, w_ec, t, err_dep, err_Q)                #shuusei20251127
+  print(prior_selected_params)                                          #shuusei20251127
+  write_tsv(prior_selected_params,                                      #shuusei20251127
+            "Data/prior_selected_params_with_err.txt",                  #shuusei20251127
+            col_names = TRUE)                                           #shuusei20251127
   
   ## 4-1-5. その平均を prior の平均として採用                           #shuusei20251122
   prior_mean <- c(                                                       #shuusei20251122
@@ -273,6 +282,20 @@ keep   <- order(distances)[1:n_keep]                                    #shuusei
 
 allowed_params_quint <- as.data.frame(param_draws[keep, ])              #shuusei20251121
 
+## 7-1. 事後サンプルごとの err_dep, err_Q, distance を付けた表        #shuusei20251127
+posterior_params_full <- allowed_params_quint                           #shuusei20251127
+posterior_params_full$err_dep <- err_dep_all[keep]                      #shuusei20251127
+posterior_params_full$err_Q   <- err_Q_all[keep]                        #shuusei20251127
+posterior_params_full$distance <- distances[keep]                       #shuusei20251127
+
+print(posterior_params_full)                                            #shuusei20251127
+
+## 従来通り：パラメータだけのファイル（既存コードとの互換性用）      #shuusei20251127
 write_tsv(allowed_params_quint,                                         #shuusei20251121
           "Data/allowed_params_quintile.txt",                           #shuusei20251121
           col_names = FALSE)                                            #shuusei20251121
+
+## 新規：パラメータ＋誤差＋距離を含むファイル                        #shuusei20251127
+write_tsv(posterior_params_full,                                        #shuusei20251127
+          "Data/allowed_params_quintile_with_err.txt",                  #shuusei20251127
+          col_names = TRUE)                                             #shuusei20251127
