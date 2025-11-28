@@ -17,6 +17,8 @@ batch_run_func <- function(number_of_agents,
   
   initialise_vars() # create variables which will store output
   
+  cap_limit_all <- NULL                                     #shuusei20251128  各runの集計を貯める
+  
   for (i1 in 1:number_of_runs) {
     w <- unlist(sample_for_run[i1, 1:4])
     threshold <- unlist(sample_for_run[i1, 5])
@@ -31,6 +33,14 @@ batch_run_func <- function(number_of_agents,
     
     append_results() # add results of current run to previous results
     
+    ## 各 run ごとの「制約別・デシル別集計」をまとめる               #shuusei20251128
+    cap_i <- NULL                                                   #shuusei20251128
+    if (length(all_res_rn) >= 8) {                                  #shuusei20251128
+      cap_i <- all_res_rn[[length(all_res_rn)]]                     #shuusei20251128
+    }                                                               #shuusei20251128
+    if (!is.null(cap_i)) {                                          #shuusei20251128
+      cap_limit_all <- dplyr::bind_rows(cap_limit_all, cap_i)       #shuusei20251128
+    }                                                               #shuusei20251128
     
   }
   
@@ -124,8 +134,72 @@ batch_run_func <- function(number_of_agents,
           ylab("Fraction of adopters by income decile") +               #shuusei20251118
           xlab("Date"))                                                 #shuusei20251118
   
-  
-  
+  ## --- 新規: 制約タイプ別の集計とグラフ --------------------------- #shuusei20251128
+  if (!is.null(cap_limit_all)) {                                        #shuusei20251128
+    cap_limit_all$decile <- as.integer(cap_limit_all$decile)           #shuusei20251128
+    
+    ## 1) 「予算 / 需要」どちらが効いたかのシェア（デシル別）        #shuusei20251128
+    cap_share <- cap_limit_all %>%                                     #shuusei20251128
+      dplyr::group_by(run_number, decile) %>%                          #shuusei20251128
+      dplyr::mutate(total_adopters = sum(n_adopters)) %>%              #shuusei20251128
+      dplyr::ungroup() %>%                                             #shuusei20251128
+      dplyr::filter(total_adopters > 0) %>%                            #shuusei20251128
+      dplyr::mutate(share = n_adopters / total_adopters) %>%           #shuusei20251128
+      dplyr::group_by(decile, limit_type) %>%                          #shuusei20251128
+      dplyr::summarise(                                                #shuusei20251128
+        mean_share = mean(share, na.rm = TRUE),                        #shuusei20251128
+        sd_share   = sd(share,   na.rm = TRUE),                        #shuusei20251128
+        .groups = "drop"                                               #shuusei20251128
+      )                                                                #shuusei20251128
+    
+    cap_share <- cap_share %>%                                         #shuusei20251128
+      dplyr::mutate(decile = factor(decile, levels = 1:10))            #shuusei20251128
+    
+    print(                                                             #shuusei20251128
+      ggplot(cap_share, aes(x = decile, y = mean_share,               #shuusei20251128
+                            fill = limit_type)) +                      #shuusei20251128
+        theme_bw() +                                                   #shuusei20251128
+        geom_col(position = "stack") +                                 #shuusei20251128
+        ylab("Share of adopters by binding constraint") +              #shuusei20251128
+        xlab("Income decile") +                                        #shuusei20251128
+        scale_y_continuous(labels = scales::percent)                   #shuusei20251128
+    )                                                                  #shuusei20251128
+    
+    ## 2) 制約タイプごとの平均容量（加重平均）                         #shuusei20251128
+    cap_level <- cap_limit_all %>%                                     #shuusei20251128
+      dplyr::group_by(decile, limit_type) %>%                          #shuusei20251128
+      dplyr::summarise(                                                #shuusei20251128
+        total_adopters = sum(n_adopters),                              #shuusei20251128
+        inst_cap_budget = ifelse(total_adopters > 0,                   #shuusei20251128
+                                 sum(mean_inst_cap_budget * n_adopters) / total_adopters, NA_real_), #shuusei20251128
+        meet_demand     = ifelse(total_adopters > 0,                   #shuusei20251128
+                                 sum(mean_meet_demand     * n_adopters) / total_adopters, NA_real_), #shuusei20251128
+        inst_cap_actual = ifelse(total_adopters > 0,                   #shuusei20251128
+                                 sum(mean_inst_cap_actual * n_adopters) / total_adopters, NA_real_), #shuusei20251128
+        .groups = "drop"                                               #shuusei20251128
+      )                                                                #shuusei20251128
+    
+    cap_level_long <- cap_level %>%                                    #shuusei20251128
+      tidyr::pivot_longer(cols = c("inst_cap_budget",                  #shuusei20251128
+                                   "meet_demand",                      #shuusei20251128
+                                   "inst_cap_actual"),                 #shuusei20251128
+                          names_to = "cap_type",                       #shuusei20251128
+                          values_to = "cap_value") %>%                 #shuusei20251128
+      dplyr::mutate(decile = factor(decile, levels = 1:10))           #shuusei20251128
+    
+    print(                                                             #shuusei20251128
+      ggplot(cap_level_long,                                          #shuusei20251128
+             aes(x = decile, y = cap_value,                           #shuusei20251128
+                 colour = cap_type, group = cap_type)) +              #shuusei20251128
+        theme_bw() +                                                  #shuusei20251128
+        geom_line() +                                                 #shuusei20251128
+        geom_point() +                                                #shuusei20251128
+        facet_wrap(~ limit_type) +                                    #shuusei20251128
+        ylab("Capacity (kW)") +                                       #shuusei20251128
+        xlab("Income decile")                                         #shuusei20251128
+    )                                                                 #shuusei20251128
+  }                                                                   #shuusei20251128
+  ## --------------------------------------------------------------- #shuusei20251128
   
   if(missing(save_name)){
     cat("\n", "Data not being saved!", "\n", sep = "")
@@ -139,9 +213,11 @@ batch_run_func <- function(number_of_agents,
     if (run_w_cap == TRUE) write_rds(FiT_levels, paste(save_name, "_FiT_levels.rds", sep = ""))
   }
   
-  to_return <- list(avg_u, cost, cost_priv, LCOE_data, LCOE_avg, FiT)
+  # cap_limit_all も戻り値に含める                                   #shuusei20251128
+  to_return <- list(avg_u, cost, cost_priv, LCOE_data, LCOE_avg, FiT, cap_limit_all)  #shuusei20251128
   
-  if (run_w_cap == TRUE) to_return <- list(avg_u, cost, cost_priv, LCOE_data, LCOE_avg, FiT, FiT_levels)
+  if (run_w_cap == TRUE) to_return <- list(avg_u, cost, cost_priv, LCOE_data, LCOE_avg,  #shuusei20251128
+                                           FiT, FiT_levels, cap_limit_all)              #shuusei20251128
   
   return(to_return)
   
@@ -401,6 +477,39 @@ run_model <- function(number_of_agents, rn, w, threshold) {
   
   if (run_w_cap == TRUE && exceeded == TRUE) cat("Total available capacity was exceeded", "\n")
   
+  ## --- 新規: 採用世帯の「どの制約が効いたか」をデシル別に集計 ---- #shuusei20251128
+  cap_limit_dec <- NULL                                                       #shuusei20251128
+  if (length(adopters) > 0) {                                                 #shuusei20251128
+    decs   <- extract(adopters, "inc_decile")                                 #shuusei20251128
+    limit  <- extract(adopters, "cap_limit_raw")                               #shuusei20251128
+    cap_b  <- extract(adopters, "inst_cap_budget_raw")                        #shuusei20251128
+    cap_md <- extract(adopters, "meet_demand_raw")                            #shuusei20251128
+    cap_act<- extract(adopters, "inst_cap")                                   #shuusei20251128
+    
+    limit  <- as.character(limit)                                             #shuusei20251128
+    
+    cap_df <- data.frame(                                                     #shuusei20251128
+      decile          = decs,                                                #shuusei20251128
+      limit_type      = limit,                                               #shuusei20251128
+      inst_cap_budget = cap_b,                                               #shuusei20251128
+      meet_demand     = cap_md,                                              #shuusei20251128
+      inst_cap_actual = cap_act                                              #shuusei20251128
+    )                                                                         #shuusei20251128
+    
+    cap_limit_dec <- cap_df %>%                                              #shuusei20251128
+      dplyr::filter(!is.na(decile), !is.na(limit_type)) %>%                  #shuusei20251128
+      dplyr::group_by(decile, limit_type) %>%                                #shuusei20251128
+      dplyr::summarise(                                                      #shuusei20251128
+        n_adopters          = dplyr::n(),                                    #shuusei20251128
+        mean_inst_cap_budget = mean(inst_cap_budget, na.rm = TRUE),         #shuusei20251128
+        mean_meet_demand     = mean(meet_demand,     na.rm = TRUE),         #shuusei20251128
+        mean_inst_cap_actual = mean(inst_cap_actual, na.rm = TRUE),         #shuusei20251128
+        .groups = "drop"                                                     #shuusei20251128
+      ) %>%                                                                  #shuusei20251128
+      dplyr::mutate(run_number = rn)                                         #shuusei20251128
+  }                                                                           #shuusei20251128
+  ## -------------------------------------------------------------------- #shuusei20251128
+  
   FiT_outp <- cbind(FiT, run_number = rep(rn, nrow(FiT)))
   
   LCOE_data <- calc_LCOE(adopters, rn, number_of_agents)
@@ -413,12 +522,15 @@ run_model <- function(number_of_agents, rn, w, threshold) {
   
   tot_priv_cost <- cost_priv_res[[2]]
   cum_priv_cost <- cost_priv_res[[1]]
-  all_results <- list(avg_u, ann_subs_cost, tot_subs_cost, cum_priv_cost, 
-                      tot_priv_cost, LCOE_avg, LCOE_data)
-  if (run_w_cap == TRUE) {
-    all_results <- list(avg_u, ann_subs_cost, tot_subs_cost, cum_priv_cost, 
-                        tot_priv_cost, LCOE_avg, LCOE_data, FiT_outp)
-  }
+  
+  # cap_limit_dec を最後の要素として返すように変更                 #shuusei20251128
+  all_results <- list(avg_u, ann_subs_cost, tot_subs_cost, cum_priv_cost,     #shuusei20251128
+                      tot_priv_cost, LCOE_avg, LCOE_data, cap_limit_dec)      #shuusei20251128
+  if (run_w_cap == TRUE) {                                                    #shuusei20251128
+    all_results <- list(avg_u, ann_subs_cost, tot_subs_cost, cum_priv_cost,   #shuusei20251128
+                        tot_priv_cost, LCOE_avg, LCOE_data, FiT_outp,         #shuusei20251128
+                        cap_limit_dec)                                        #shuusei20251128
+  }                                                                           #shuusei20251128
   
   cat(length(adopters), "adopters in run", rn, "\n", sep = " ")
   
