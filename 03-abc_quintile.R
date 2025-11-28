@@ -122,7 +122,11 @@ if (use_auto_prior) {                                                   #shuusei
   
   ## 4-1-2. リストを行列にまとめる                                     #shuusei20251122
   scan_res <- do.call(rbind, scan_list)                                 #shuusei20251122
-  scan_df  <- as.data.frame(scan_res)                                   #shuusei20251122
+  scan_res <- as.matrix(scan_res)                                       #shuusei20251127
+  colnames(scan_res) <- c("w_inc","w_soc","w_ec",                       #shuusei20251127
+                          "t","err_dep","err_Q")                        #shuusei20251127
+  scan_df  <- as.data.frame(scan_res,                                   #shuusei20251127
+                            stringsAsFactors = FALSE)                   #shuusei20251127
   
   ## 4-1-3. 誤差を標準化して距離を定義                                  #shuusei20251122
   scan_df$dist <- scale(scan_df$err_dep) + scale(scan_df$err_Q)         #shuusei20251122

@@ -303,6 +303,25 @@ extract <- function(x, str) { # x is adopters or agents (a list of Household obj
   if (length(x) > 0) unname(unlist(sapply(x, function (x) x[str])))
 }
 
+# income と meet_demand の関係をエクスポートする補助関数              #shuusei20251127
+export_meet_demand_vs_income <- function(agents,                        #shuusei20251127
+                                         file_path = "Data/meet_demand_income.csv") { #shuusei20251127
+  inc  <- extract(agents, "income")                                     #shuusei20251127
+  lf   <- extract(agents, "LF")                                         #shuusei20251127
+  cons <- extract(agents, "consumption")                                #shuusei20251127
+  
+  meet_demand <- cons / (lf * 24 * 365)                                 #shuusei20251127
+  
+  df <- data.frame(income      = inc,                                   #shuusei20251127
+                   LF          = lf,                                    #shuusei20251127
+                   consumption = cons,                                  #shuusei20251127
+                   meet_demand = meet_demand)                           #shuusei20251127
+  
+  readr::write_csv(df, file_path)                                       #shuusei20251127
+  
+  return(invisible(df))                                                 #shuusei20251127
+}              
+
 assign_income <- function() {
   rlnorm(1, 10.06654, 0.574439)
 }
@@ -340,18 +359,48 @@ assign_elec_cons <- function(A) {
 }
 
 assign_u_inc <- function(A, mean_inc) {
-  A$u_inc <- 1/(1+exp((mean_inc-A$income)*0.0002))
+  A$u_inc <- 1/(1+exp((mean_inc-A$income)*0.000002))
   return(A)
 }
 
+# 所得デシルごとの「屋根制約（roof factor）」                    #shuusei20251127
+get_roof_factor_by_decile <- function(dec) {                            #shuusei20251127
+  if (is.null(dec) || is.na(dec)) return(1)                             #shuusei20251127
+  
+  if (dec <= 2) {        # D1–2 → Q1                                   #shuusei20251127
+    return(0.90)                                                        #shuusei20251127
+  } else if (dec <= 4) { # D3–4 → Q2                                   #shuusei20251127
+    return(0.95)                                                        #shuusei20251127
+  } else if (dec <= 6) { # D5–6 → Q3                                   #shuusei20251127
+    return(1.00)                                                        #shuusei20251127
+  } else if (dec <= 8) { # D7–8 → Q4                                   #shuusei20251127
+    return(1.10)                                                        #shuusei20251127
+  } else {              # D9–10 → Q5                                   #shuusei20251127
+    return(0.95)                                                        #shuusei20251127
+  }                                                                    #shuusei20251127
+}                                                                      #shuusei20251127
+
 assign_inst_cap <- function(A) {
   if (A$status == "N") { # otherwise agents who have already adopted can change inst_cap!
-    inst_cap <- 0.3*A$income/kW_price_current
-    meet_demand <- A$consumption/(A$LF*24*365)
+    ## 予算ベースの容量（従来どおり）                                 #shuusei20251127
+    inst_cap_budget <- 0.3*A$income/kW_price_current                    #shuusei20251127
     
-    if (meet_demand < inst_cap) inst_cap <- meet_demand
+    ## 需要ベースの容量（従来どおり）                                 #shuusei20251127
+    meet_demand <- A$consumption/(A$LF*24*365)                          #shuusei20251127
     
-    A$inst_cap <- inst_cap
+    ## 所得デシルごとの屋根制約（roof factor）                         #shuusei20251127
+    rf <- 1                                                             #shuusei20251127
+    if (!is.null(A$inc_decile) && !is.na(A$inc_decile)) {               #shuusei20251127
+      rf <- get_roof_factor_by_decile(A$inc_decile)                     #shuusei20251127
+    }                                                                   #shuusei20251127
+    
+    ## 屋根制約をかけた「実効的な需要上限」                           #shuusei20251127
+    roof_limit <- meet_demand * rf                                      #shuusei20251127
+    
+    ## 最終的な容量は「予算」と「屋根付き需要」の小さい方             #shuusei20251127
+    inst_cap <- min(inst_cap_budget, roof_limit)                        #shuusei20251127
+    
+    A$inst_cap <- inst_cap                                              #shuusei20251127
     if (inst_cap > 4) {   # would they be better off going for the lower investment?
       ret_large <- annual_return(A)
       large_cap <- A$inst_cap
@@ -463,9 +512,22 @@ soc_utility <- function(A, ags) {
   
 }
 
-cap_utility <- function(A) {
-  u_cap <- 1/(1+exp(-(0.2*A$income-A$inst_cap*kW_price_current)*0.0007))
-}
+cap_utility <- function(A) {                                           #shuusei20251127
+  cap_share0 <- 0.2                                                    #shuusei20251127
+  # ↑「所得の 20% を PV に回す状態」を基準点（u_cap = 0.5）にする      #shuusei20251127
+  
+  k_cap      <- 20                                                     #shuusei20251127
+  # ↑ ロジスティックの傾き。大きいほど 0/1 に近づきやすい（要調整）   #shuusei20251127
+  
+  # 所得に対する PV 投資額の比率（費用 / 所得）                        #shuusei20251127
+  ratio <- (A$inst_cap * kW_price_current) / A$income                  #shuusei20251127
+  
+  # ratio = cap_share0 のとき u_cap = 0.5 になるロジスティック          #shuusei20251127
+  # ratio が小さいほど u_cap が 1 に近づき、大きいほど 0 に近づく      #shuusei20251127
+  u_cap <- 1/(1 + exp((ratio - cap_share0) * k_cap))                   #shuusei20251127
+  
+  return(u_cap)                                                        #shuusei20251127
+}                        
 
 #---------------------------- 1.3 Cost calculation ------------------------------#
 subs_cost <- function(adpts, rn, number_of_agents) {
