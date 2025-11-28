@@ -38,6 +38,10 @@ load_data()
 
 results <- batch_run_func(number_of_runs = 10, number_of_agents = 500)
 
+#デシル別「導入世帯あたり平均導入量」の時系列
+load_plot_sim_data("test")
+
+
 # The default number of agents is 5000, and the default number of runs is 100. 
 # So just running batch_run_func() does 100 runs with 5000 agents. 
 # I've put number_of_agents = 500 and number_of_runs = 10 here to speed things up.
