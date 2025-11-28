@@ -66,7 +66,7 @@ simulate_summary <- function(w, t, n_agents = n_agents_abc) {           #shuusei
 
 ## 4. ABC 設定（ガウス事前分布）                                      #shuusei20251122
 set.seed(123)                                                           #shuusei20251122
-n_sim <- 500                                                         #shuusei20251122  # 本番 ABC で回す本数
+n_sim <- 300                                                         #shuusei20251122  # 本番 ABC で回す本数
 
 ## エージェント数の設定（予備スキャン / 本番ABC）                     #shuusei20251118
 n_agents_scan <- 300                                                  #shuusei20251118  # 予備スキャン用（軽め）  

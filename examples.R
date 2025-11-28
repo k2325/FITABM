@@ -36,7 +36,10 @@ load_data()
 
 # To run the simulation:
 
-results <- batch_run_func(number_of_runs = 10, number_of_agents = 500)
+## 1 行目・2 行目…と「順番に」使う
+results_seq <- batch_run_func(number_of_runs    = 3,
+                              number_of_agents  = 500,
+                              use_random_params = FALSE)
 
 #デシル別「導入世帯あたり平均導入量」の時系列
 load_plot_sim_data("test")
