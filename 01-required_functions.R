@@ -368,15 +368,15 @@ get_roof_factor_by_decile <- function(dec) {                            #shuusei
   if (is.null(dec) || is.na(dec)) return(1)                             #shuusei20251127
   
   if (dec <= 2) {        # D1–2 → Q1                                   #shuusei20251127
-    return(0.90)                                                        #shuusei20251127
+    return(1.00)                                                        #shuusei20251127
   } else if (dec <= 4) { # D3–4 → Q2                                   #shuusei20251127
-    return(0.95)                                                        #shuusei20251127
+    return(1.00)                                                        #shuusei20251127
   } else if (dec <= 6) { # D5–6 → Q3                                   #shuusei20251127
     return(1.00)                                                        #shuusei20251127
   } else if (dec <= 8) { # D7–8 → Q4                                   #shuusei20251127
-    return(1.10)                                                        #shuusei20251127
+    return(1.50)                                                        #shuusei20251127
   } else {              # D9–10 → Q5                                   #shuusei20251127
-    return(0.95)                                                        #shuusei20251127
+    return(0.60)                                                        #shuusei20251127
   }                                                                    #shuusei20251127
 }                                                                      #shuusei20251127
 
@@ -504,12 +504,17 @@ output <- function(x, y) {
   P <- x*24*365*y
 }
 
+#soc_utility <- function(A, ags) {
+  #neighbours <- ags[A$network]
+  #links <- length(A$network)
+  #no_adopters <- sum(map_int(neighbours, "status") == 1)
+  #u_soc <- 1/(1+exp(1.2*((links/4)-no_adopters)))
+  
 soc_utility <- function(A, ags) {
   neighbours <- ags[A$network]
   links <- length(A$network)
   no_adopters <- sum(map_int(neighbours, "status") == 1)
-  u_soc <- 1/(1+exp(1.2*((links/4)-no_adopters)))
-  
+  u_soc <- 1/(1+exp(0.6*((links/2)-no_adopters)))  #shuusei20251128
 }
 
 cap_utility <- function(A) {                                           #shuusei20251127
