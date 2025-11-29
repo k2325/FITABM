@@ -4,37 +4,18 @@
 
 #--------------------------------- Batch runs -----------------------------------#
 
-batch_run_func <- function(number_of_agents,                                              #shuusei202511288
-                           number_of_runs, plot_u = T, plot_cost = T, plot_prod = T,      #shuusei202511288
-                           save_name,                                                     #shuusei202511288
-                           use_random_params = TRUE) {                                    #shuusei202511288
+batch_run_func <- function(number_of_agents, 
+                           number_of_runs, plot_u = T, plot_cost = T, plot_prod = T, save_name) {
   
-  use_low_income_bonus <<- FALSE                           #shuusei20251116 #shuusei202511288
+  use_low_income_bonus <<- FALSE                           #shuusei20251116
+  allowed_params <- read_tsv('Data/allowed_params_1000.txt', col_names = F)
   
-  ## デフォルト値の設定（サンプリング前に設定しておく）                        #shuusei202511288
-  if (missing(number_of_agents)) number_of_agents <- 5000                                #shuusei202511288
-  if (missing(number_of_runs))  number_of_runs  <- 100                                   #shuusei202511288
+  sample_for_run <- allowed_params[sample(1:nrow(allowed_params), number_of_runs, replace = TRUE), ]
   
-  ## allowed_params_1000.txt を読み込み                                            #shuusei202511288
-  allowed_params <- read_tsv('Data/allowed_params_1000.txt', col_names = F)             #shuusei202511288
-  n_allowed <- nrow(allowed_params)                                                     #shuusei202511288
-  
-  ## パラメタの選び方：ランダム or 先頭から順番                                          #shuusei202511288
-  if (use_random_params) {                                                              #shuusei202511288
-    ## 従来どおり：ランダムに number_of_runs 行を抽出                                   #shuusei202511288
-    idx_params <- sample(1:n_allowed, number_of_runs, replace = TRUE)                  #shuusei202511288
-  } else {                                                                              #shuusei202511288
-    ## 新モード：1 行目から順番に使う                                                   #shuusei202511288
-    if (number_of_runs > n_allowed) {                                                   #shuusei202511288
-      stop("number_of_runs が allowed_params_1000.txt の行数を超えています（use_random_params = FALSE のとき）。") #shuusei202511288
-    }                                                                                   #shuusei202511288
-    idx_params <- 1:number_of_runs                                                      #shuusei202511288
-  }                                                                                     #shuusei202511288
-  
-  sample_for_run <- allowed_params[idx_params, , drop = FALSE]                         #shuusei202511288
+  if(missing(number_of_agents)) number_of_agents <- 5000
+  if(missing(number_of_runs)) number_of_runs <- 100
   
   initialise_vars() # create variables which will store output
-  
   
   for (i1 in 1:number_of_runs) {
     w <- unlist(sample_for_run[i1, 1:4])
@@ -121,35 +102,27 @@ batch_run_func <- function(number_of_agents,                                    
   
   print_vars <- paste("w = ", w[1], w[2], w[3], w[4], ", t =", threshold,", n_agents =", number_of_agents)
   
-  print(ggplot() + theme_bw() +                                         #shuusei202511288
-          geom_line(data = deployment, aes(x = time_series, y = real_cap), color = "blue", size = 1) +  #shuusei202511288
-          geom_line(data = avg_u, aes(x = time_series,                  #shuusei202511288
-                                      y = tot_inst_cap, group = run_number), alpha = 0.2)+  #shuusei202511288
-          geom_line(data = averages, aes(x = time_series, y = tot_inst_cap), color = "black", size = 1) + #shuusei202511288
-          annotate("text", x = dmy("01jul2011"), y = 2000, label = print_vars))  #shuusei202511288
+  print(ggplot() + theme_bw() + 
+          geom_line(data = deployment, aes(x = time_series, y = real_cap), color = "blue", size = 1) + 
+          geom_line(data = avg_u, aes(x = time_series, 
+                                      y = tot_inst_cap, group = run_number), alpha = 0.2)+
+          geom_line(data = averages, aes(x = time_series, y = tot_inst_cap), color = "black", size = 1) +
+          annotate("text", x = dmy("01jul2011"), y = 2000, label = print_vars))
   
-  # SES 五分位別「累積導入容量（MW）」の推移をプロット              #shuusei202511288
-  cap_dec_vars <- paste0("cap_dec", 1:10)                               #shuusei202511288
-  if (all(cap_dec_vars %in% names(averages))) {                         #shuusei202511288
-    cap_mat   <- as.matrix(averages[, cap_dec_vars])                    #shuusei202511288
-    cap_Q_mat <- t(apply(cap_mat, 1, calc_quintile_cap))                #shuusei202511288
-    
-    cap_Q_df <- cbind(                                                  #shuusei202511288
-      time_series = averages$time_series,                               #shuusei202511288
-      as.data.frame(cap_Q_mat)                                          #shuusei202511288
-    )                                                                   #shuusei202511288
-    
-    cap_Q_long <- cap_Q_df %>%                                          #shuusei202511288
-      pivot_longer(cols = starts_with("Q"),                             #shuusei202511288
-                   names_to = "quintile",                               #shuusei202511288
-                   values_to = "cap_MW")                                #shuusei202511288
-    
-    print(ggplot(cap_Q_long) + theme_bw() +                             #shuusei202511288
-            geom_line(aes(x = time_series, y = cap_MW,                  #shuusei202511288
-                          color = quintile)) +                          #shuusei202511288
-            ylab("Cumulative capacity by SES quintile (MW)") +          #shuusei202511288
-            xlab("Date"))                                               #shuusei202511288
-  }                                                                     #shuusei202511288
+  # デシル別導入率の推移をプロット                               #shuusei20251122
+  dec_vars <- paste0("frac_dec", 1:10)                                  #shuusei20251118
+  dec_df <- averages %>%                                                #shuusei20251118
+    select(time_series, all_of(dec_vars)) %>%                           #shuusei20251118
+    pivot_longer(cols = starts_with("frac_dec"),                        #shuusei20251118
+                 names_to = "decile", values_to = "frac") %>%           #shuusei20251118
+    mutate(decile = str_replace(decile, "frac_dec", "D")) %>%           #shuusei20251118
+    mutate(decile = factor(decile,                                      #shuusei20251122
+                           levels = paste0("D", 10:1)))                 #shuusei20251122
+  
+  print(ggplot(dec_df) + theme_bw() +                                   #shuusei20251118
+          geom_line(aes(x = time_series, y = frac, color = decile)) +   #shuusei20251118
+          ylab("Fraction of adopters by income decile") +               #shuusei20251118
+          xlab("Date"))                                                 #shuusei20251118
   
   
   
@@ -254,49 +227,8 @@ run_model <- function(number_of_agents, rn, w, threshold) {
                       cap_dec7   = vector(length = time_steps),   #shuusei20251121
                       cap_dec8   = vector(length = time_steps),   #shuusei20251121
                       cap_dec9   = vector(length = time_steps),   #shuusei20251121
-                      cap_dec10  = vector(length = time_steps),   #shuusei20251121
-                      share_s1_budget_dec1 = vector(length = time_steps),  #shuusei202511288
-                      share_s1_budget_dec2 = vector(length = time_steps),  #shuusei202511288
-                      share_s1_budget_dec3 = vector(length = time_steps),  #shuusei202511288
-                      share_s1_budget_dec4 = vector(length = time_steps),  #shuusei202511288
-                      share_s1_budget_dec5 = vector(length = time_steps),  #shuusei202511288
-                      share_s1_budget_dec6 = vector(length = time_steps),  #shuusei202511288
-                      share_s1_budget_dec7 = vector(length = time_steps),  #shuusei202511288
-                      share_s1_budget_dec8 = vector(length = time_steps),  #shuusei202511288
-                      share_s1_budget_dec9 = vector(length = time_steps),  #shuusei202511288
-                      share_s1_budget_dec10 = vector(length = time_steps), #shuusei202511288
-                      share_s1_roof_dec1   = vector(length = time_steps),  #shuusei202511288
-                      share_s1_roof_dec2   = vector(length = time_steps),  #shuusei202511288
-                      share_s1_roof_dec3   = vector(length = time_steps),  #shuusei202511288
-                      share_s1_roof_dec4   = vector(length = time_steps),  #shuusei202511288
-                      share_s1_roof_dec5   = vector(length = time_steps),  #shuusei202511288
-                      share_s1_roof_dec6   = vector(length = time_steps),  #shuusei202511288
-                      share_s1_roof_dec7   = vector(length = time_steps),  #shuusei202511288
-                      share_s1_roof_dec8   = vector(length = time_steps),  #shuusei202511288
-                      share_s1_roof_dec9   = vector(length = time_steps),  #shuusei202511288
-                      share_s1_roof_dec10  = vector(length = time_steps),  #shuusei202511288
-                      share_s2_4_dec1      = vector(length = time_steps),  #shuusei202511288
-                      share_s2_4_dec2      = vector(length = time_steps),  #shuusei202511288
-                      share_s2_4_dec3      = vector(length = time_steps),  #shuusei202511288
-                      share_s2_4_dec4      = vector(length = time_steps),  #shuusei202511288
-                      share_s2_4_dec5      = vector(length = time_steps),  #shuusei202511288
-                      share_s2_4_dec6      = vector(length = time_steps),  #shuusei202511288
-                      share_s2_4_dec7      = vector(length = time_steps),  #shuusei202511288
-                      share_s2_4_dec8      = vector(length = time_steps),  #shuusei202511288
-                      share_s2_4_dec9      = vector(length = time_steps),  #shuusei202511288
-                      share_s2_4_dec10     = vector(length = time_steps),  #shuusei202511288
-                      share_s2_large_dec1  = vector(length = time_steps),  #shuusei202511288
-                      share_s2_large_dec2  = vector(length = time_steps),  #shuusei202511288
-                      share_s2_large_dec3  = vector(length = time_steps),  #shuusei202511288
-                      share_s2_large_dec4  = vector(length = time_steps),  #shuusei202511288
-                      share_s2_large_dec5  = vector(length = time_steps),  #shuusei202511288
-                      share_s2_large_dec6  = vector(length = time_steps),  #shuusei202511288
-                      share_s2_large_dec7  = vector(length = time_steps),  #shuusei202511288
-                      share_s2_large_dec8  = vector(length = time_steps),  #shuusei202511288
-                      share_s2_large_dec9  = vector(length = time_steps),  #shuusei202511288
-                      share_s2_large_dec10 = vector(length = time_steps)   #shuusei202511288
+                      cap_dec10  = vector(length = time_steps)   #shuusei20251121
   )
-  
   
   
   #---------------------------------------------------------#
@@ -356,8 +288,6 @@ run_model <- function(number_of_agents, rn, w, threshold) {
     deciles   <- extract(agents, "inc_decile")                         #shuusei20251121
     status    <- extract(agents, "status") == "Y"                      #shuusei20251121
     inst_caps <- extract(agents, "inst_cap")                           #shuusei20251121
-    cap_s1    <- extract(agents, "cap_choice_stage1")                  #shuusei202511288
-    cap_s2    <- extract(agents, "cap_choice_stage2")                  #shuusei202511288
     
     for (d in 1:10) {                                                  #shuusei20251121
       idx_all   <- which(deciles == d)                                 #shuusei20251121
@@ -371,54 +301,15 @@ run_model <- function(number_of_agents, rn, w, threshold) {
         avg_u[i, paste0("frac_dec", d)] <- NA                          #shuusei20251121
       }                                                                #shuusei20251121
       
-      # そのデシルの「累積容量（MW）」＋制約の効き方                #shuusei202511288
+      # そのデシルの「累積容量（MW）」                              #shuusei20251121
       if (length(idx_adopt) > 0) {                                     #shuusei20251121
         cap_d <- sum(inst_caps[idx_adopt], na.rm = TRUE) *             #shuusei20251121
-          n_owners/(1000*number_of_agents)                             #shuusei20251121
-        
-        ## Stage1: inst_cap_budget vs roof_limit                        #shuusei202511288
-        s1_budget_vec <- cap_s1[idx_adopt] == "budget"                 #shuusei202511288
-        if (all(is.na(s1_budget_vec))) {                               #shuusei202511288
-          s1_budget <- NA_real_                                        #shuusei202511288
-        } else {                                                       #shuusei202511288
-          s1_budget <- mean(s1_budget_vec, na.rm = TRUE)               #shuusei202511288
-        }                                                              #shuusei202511288
-        
-        s1_roof_vec <- cap_s1[idx_adopt] == "roof"                     #shuusei202511288
-        if (all(is.na(s1_roof_vec))) {                                 #shuusei202511288
-          s1_roof <- NA_real_                                          #shuusei202511288
-        } else {                                                       #shuusei202511288
-          s1_roof <- mean(s1_roof_vec, na.rm = TRUE)                   #shuusei202511288
-        }                                                              #shuusei202511288
-        
-        ## Stage2: 4kW を選んだか / large を選んだか                   #shuusei202511288
-        s2_4_vec <- cap_s2[idx_adopt] == "choose_4"                    #shuusei202511288
-        if (all(is.na(s2_4_vec))) {                                    #shuusei202511288
-          s2_4 <- NA_real_                                             #shuusei202511288
-        } else {                                                       #shuusei202511288
-          s2_4 <- mean(s2_4_vec, na.rm = TRUE)                         #shuusei202511288
-        }                                                              #shuusei202511288
-        
-        s2_large_vec <- cap_s2[idx_adopt] == "choose_large"            #shuusei202511288
-        if (all(is.na(s2_large_vec))) {                                #shuusei202511288
-          s2_large <- NA_real_                                         #shuusei202511288
-        } else {                                                       #shuusei202511288
-          s2_large <- mean(s2_large_vec, na.rm = TRUE)                 #shuusei202511288
-        }                                                              #shuusei202511288
-        
+          n_owners/(1000*number_of_agents)                      #shuusei20251121
       } else {                                                         #shuusei20251121
-        cap_d    <- 0                                                  #shuusei20251121
-        s1_budget <- NA_real_                                          #shuusei202511288
-        s1_roof   <- NA_real_                                          #shuusei202511288
-        s2_4      <- NA_real_                                          #shuusei202511288
-        s2_large  <- NA_real_                                          #shuusei202511288
+        cap_d <- 0                                                     #shuusei20251121
       }                                                                #shuusei20251121
       
-      avg_u[i, paste0("cap_dec", d)]           <- cap_d                #shuusei20251121
-      avg_u[i, paste0("share_s1_budget_dec", d)] <- s1_budget          #shuusei202511288
-      avg_u[i, paste0("share_s1_roof_dec",   d)] <- s1_roof            #shuusei202511288
-      avg_u[i, paste0("share_s2_4_dec",      d)] <- s2_4               #shuusei202511288
-      avg_u[i, paste0("share_s2_large_dec",  d)] <- s2_large           #shuusei202511288
+      avg_u[i, paste0("cap_dec", d)] <- cap_d                          #shuusei20251121
     }                                                                  #shuusei20251121
     
     
@@ -671,76 +562,19 @@ batch_run_func_f <- function(agent_name,
           annotate("text", x = dmy("01jul2011"), y = 2000, label = print_vars))
   
   # デシル別導入率の推移をプロット（未来シナリオ）               #shuusei20251122
+  dec_vars <- paste0("frac_dec", 1:10)                                  #shuusei20251118
+  dec_df <- averages %>%                                                #shuusei20251118
+    select(time_series, all_of(dec_vars)) %>%                           #shuusei20251118
+    pivot_longer(cols = starts_with("frac_dec"),                        #shuusei20251118
+                 names_to = "decile", values_to = "frac") %>%           #shuusei20251118
+    mutate(decile = str_replace(decile, "frac_dec", "D")) %>%           #shuusei20251118
+    mutate(decile = factor(decile,                                      #shuusei20251122
+                           levels = paste0("D", 10:1)))                 #shuusei20251122
+  
   print(ggplot(dec_df) + theme_bw() +                                   #shuusei20251118
           geom_line(aes(x = time_series, y = frac, color = decile)) +   #shuusei20251118
           ylab("Fraction of adopters by income decile") +               #shuusei20251118
           xlab("Date"))                                                 #shuusei20251118
-  
-  ## Stage1: inst_cap_budget vs roof_limit が binding になった割合   #shuusei202511288
-  s1_budget_vars <- paste0("share_s1_budget_dec", 1:10)                 #shuusei202511288
-  if (all(s1_budget_vars %in% names(averages))) {                       #shuusei202511288
-    s1_budget_df <- averages %>%                                        #shuusei202511288
-      select(time_series, all_of(s1_budget_vars)) %>%                   #shuusei202511288
-      pivot_longer(cols = starts_with("share_s1_budget_dec"),           #shuusei202511288
-                   names_to = "decile", values_to = "share_budget") %>% #shuusei202511288
-      mutate(decile = str_replace(decile, "share_s1_budget_dec", "D")) %>% #shuusei202511288
-      mutate(decile = factor(decile, levels = paste0("D", 10:1)))       #shuusei202511288
-    
-    print(ggplot(s1_budget_df) + theme_bw() +                           #shuusei202511288
-            geom_line(aes(x = time_series, y = share_budget,            #shuusei202511288
-                          color = decile)) +                            #shuusei202511288
-            ylab("Share of adopters: inst_cap determined by inst_cap_budget") + #shuusei202511288
-            xlab("Date"))                                               #shuusei202511288
-  }                                                                     #shuusei202511288
-  
-  s1_roof_vars <- paste0("share_s1_roof_dec", 1:10)                     #shuusei202511288
-  if (all(s1_roof_vars %in% names(averages))) {                         #shuusei202511288
-    s1_roof_df <- averages %>%                                          #shuusei202511288
-      select(time_series, all_of(s1_roof_vars)) %>%                     #shuusei202511288
-      pivot_longer(cols = starts_with("share_s1_roof_dec"),             #shuusei202511288
-                   names_to = "decile", values_to = "share_roof") %>%   #shuusei202511288
-      mutate(decile = str_replace(decile, "share_s1_roof_dec", "D")) %>%#shuusei202511288
-      mutate(decile = factor(decile, levels = paste0("D", 10:1)))       #shuusei202511288
-    
-    print(ggplot(s1_roof_df) + theme_bw() +                             #shuusei202511288
-            geom_line(aes(x = time_series, y = share_roof,              #shuusei202511288
-                          color = decile)) +                            #shuusei202511288
-            ylab("Share of adopters: inst_cap determined by roof_limit") + #shuusei202511288
-            xlab("Date"))                                               #shuusei202511288
-  }                                                                     #shuusei202511288
-  
-  ## Stage2: 4kW を選んだか / large_cap を選んだか                   #shuusei202511288
-  s2_4_vars <- paste0("share_s2_4_dec", 1:10)                           #shuusei202511288
-  if (all(s2_4_vars %in% names(averages))) {                            #shuusei202511288
-    s2_4_df <- averages %>%                                             #shuusei202511288
-      select(time_series, all_of(s2_4_vars)) %>%                        #shuusei202511288
-      pivot_longer(cols = starts_with("share_s2_4_dec"),                #shuusei202511288
-                   names_to = "decile", values_to = "share_4") %>%      #shuusei202511288
-      mutate(decile = str_replace(decile, "share_s2_4_dec", "D")) %>%   #shuusei202511288
-      mutate(decile = factor(decile, levels = paste0("D", 10:1)))       #shuusei202511288
-    
-    print(ggplot(s2_4_df) + theme_bw() +                                #shuusei202511288
-            geom_line(aes(x = time_series, y = share_4,                 #shuusei202511288
-                          color = decile)) +                            #shuusei202511288
-            ylab("Share of adopters: final inst_cap = 4 kW") +          #shuusei202511288
-            xlab("Date"))                                               #shuusei202511288
-  }                                                                     #shuusei202511288
-  
-  s2_large_vars <- paste0("share_s2_large_dec", 1:10)                   #shuusei202511288
-  if (all(s2_large_vars %in% names(averages))) {                        #shuusei202511288
-    s2_large_df <- averages %>%                                         #shuusei202511288
-      select(time_series, all_of(s2_large_vars)) %>%                    #shuusei202511288
-      pivot_longer(cols = starts_with("share_s2_large_dec"),            #shuusei202511288
-                   names_to = "decile", values_to = "share_large") %>%  #shuusei202511288
-      mutate(decile = str_replace(decile, "share_s2_large_dec", "D")) %>% #shuusei202511288
-      mutate(decile = factor(decile, levels = paste0("D", 10:1)))       #shuusei202511288
-    
-    print(ggplot(s2_large_df) + theme_bw() +                            #shuusei202511288
-            geom_line(aes(x = time_series, y = share_large,             #shuusei202511288
-                          color = decile)) +                            #shuusei202511288
-            ylab("Share of adopters: final inst_cap > 4 kW (after check)") + #shuusei202511288
-            xlab("Date"))                                               #shuusei202511288
-  }                                                                     #shuusei202511288
   
   
   if(missing(save_name)){
