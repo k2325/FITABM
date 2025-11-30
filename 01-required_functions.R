@@ -303,6 +303,45 @@ extract <- function(x, str) { # x is adopters or agents (a list of Household obj
   if (length(x) > 0) unname(unlist(sapply(x, function (x) x[str])))
 }
 
+# income と meet_demand の関係をエクスポートする補助関数              #shuusei20251127
+export_meet_demand_vs_income <- function(agents,                        #shuusei20251127
+                                         file_path = "Data/meet_demand_income.csv") { #shuusei20251127
+  inc  <- extract(agents, "income")                                     #shuusei20251127
+  lf   <- extract(agents, "LF")                                         #shuusei20251127
+  cons <- extract(agents, "consumption")                                #shuusei20251127
+  
+  meet_demand <- cons / (lf * 24 * 365)                                 #shuusei20251127
+  
+  df <- data.frame(income      = inc,                                   #shuusei20251127
+                   LF          = lf,                                    #shuusei20251127
+                   consumption = cons,                                  #shuusei20251127
+                   meet_demand = meet_demand)                           #shuusei20251127
+  
+  readr::write_csv(df, file_path)                                       #shuusei20251127
+  
+  return(invisible(df))                                                 #shuusei20251127
+}              
+
+# 所得デシル別の平均 meet_demand を計算し、グローバルに保存する        #shuusei20251129
+compute_meet_demand_ref_by_decile <- function(agents) {                 #shuusei20251129
+  dec  <- extract(agents, "inc_decile")                                 #shuusei20251129
+  lf   <- extract(agents, "LF")                                         #shuusei20251129
+  cons <- extract(agents, "consumption")                                #shuusei20251129
+  
+  meet_demand <- cons / (lf * 24 * 365)                                 #shuusei20251129
+  
+  ref_vec <- rep(NA_real_, 10)                                          #shuusei20251129
+  for (d in 1:10) {                                                     #shuusei20251129
+    idx <- which(dec == d & !is.na(meet_demand))                        #shuusei20251129
+    if (length(idx) > 0) {                                              #shuusei20251129
+      ref_vec[d] <- mean(meet_demand[idx], na.rm = TRUE)               #shuusei20251129
+    }                                                                   #shuusei20251129
+  }                                                                     #shuusei20251129
+  
+  meet_dmd_ref_dec <<- ref_vec                                          #shuusei20251129
+  invisible(ref_vec)                                                    #shuusei20251129
+}                                                                       #shuusei20251129
+
 assign_income <- function() {
   rlnorm(1, 10.06654, 0.574439)
 }
@@ -339,30 +378,167 @@ assign_elec_cons <- function(A) {
   
 }
 
+#tyousei
 assign_u_inc <- function(A, mean_inc) {
   A$u_inc <- 1/(1+exp((mean_inc-A$income)*0.0002))
   return(A)
 }
 
+
+#---------------------------------------------------------#                              #shuusei202511299
+# SES / 所得クインタイル関連のヘルパーとパラメータ                #shuusei202511299
+#   ・デシル(1〜10) → クインタイル(Q1〜Q5) への変換             #shuusei202511299
+#   ・クインタイル別の屋根上限 / cap_share0 / 予算シェア         #shuusei202511299
+#---------------------------------------------------------#                              #shuusei202511299
+
+get_quintile_index_from_decile <- function(dec) {                       #shuusei202511299
+  if (is.null(dec) || is.na(dec)) return(NA_integer_)                   #shuusei202511299
+  q_idx <- ceiling(dec / 2)                                             #shuusei202511299
+  q_idx <- max(1L, min(5L, q_idx))                                      #shuusei202511299
+  return(q_idx)                                                         #shuusei202511299
+}                                                                       #shuusei202511299
+
+# クインタイル別の屋根上限（kW）                                     #shuusei202511299
+#   Q1: D1–2, Q2: D3–4, Q3: D5–6, Q4: D7–8, Q5: D9–10                  #shuusei202511299
+SES_ROOF_LIMIT_Q <- c(                                                  #shuusei202511299
+  0.00,  # Q1                                                           #shuusei202511299
+  0.00,  # Q2                                                           #shuusei202511299
+  0.00,  # Q3                                                           #shuusei202511299
+  0.00,  # Q4                                                           #shuusei202511299
+  0.00   # Q5                                                           #shuusei202511299
+)                                                                       #shuusei202511299
+
+# クインタイル別の cap_share0（cap_utility の基準点）                 #shuusei202511299
+#   ※ 現状は全クインタイル 0.30（= 30%）で、元の実装と同じ           #shuusei202511299
+SES_CAP_SHARE0_Q <- c(                                                  #shuusei202511299
+  0.00,  # Q1                                                           #shuusei202511299
+  0.00,  # Q2                                                           #shuusei202511299
+  0.00,  # Q3                                                           #shuusei202511299
+  0.00,  # Q4                                                           #shuusei202511299
+  0.00   # Q5                                                           #shuusei202511299
+)                                                                       #shuusei202511299
+
+# クインタイル別の「所得に対する PV 予算シェア」                      #shuusei202511299
+#   ※ 現状は全クインタイル 0.30（= 30%）で、元の実装と同じ           #shuusei202511299
+#      将来 30,27,24,21,18% にしたくなったら、このベクトルだけ変更    #shuusei202511299
+SES_BUDGET_SHARE_Q <- c(                                                #shuusei202511299
+  0.30,  # Q1                                                           #shuusei202511299
+  0.30,  # Q2                                                           #shuusei202511299
+  0.30,  # Q3                                                           #shuusei202511299
+  0.30,  # Q4                                                           #shuusei202511299
+  0.30   # Q5          
+  #shuusei202511299
+)                                                                       #shuusei202511299
+
+#tyousei
+get_roof_limit_by_decile <- function(dec) {                             #shuusei202511299
+  # inc_decile が無いときは屋根制約なし（Inf）                        #shuusei202511299
+  if (is.null(dec) || is.na(dec)) return(Inf)                           #shuusei202511299
+  
+  q_idx <- get_quintile_index_from_decile(dec)                          #shuusei202511299
+  return(SES_ROOF_LIMIT_Q[[q_idx]])                                     #shuusei202511299
+}                                                                       #shuusei202511299
+
+
+get_cap_share0_by_decile <- function(dec) {                             #shuusei202511299
+  # inc_decile が無いときは従来どおり cap_share0 = 0.20 を使用        #shuusei202511299
+  if (is.null(dec) || is.na(dec)) {                                     #shuusei202511299
+    return(0.20)                                                        #shuusei202511299
+  }                                                                     #shuusei202511299
+  
+  q_idx <- get_quintile_index_from_decile(dec)                          #shuusei202511299
+  return(SES_CAP_SHARE0_Q[[q_idx]])                                     #shuusei202511299
+}                                                                       #shuusei202511299
+
+
+get_budget_share_by_decile <- function(dec) {                           #shuusei202511299
+  # inc_decile（1〜10）→ クインタイル別「所得に対する PV 予算割合」   #shuusei202511299
+  # デフォルト 0.24 も従来どおり維持                                  #shuusei202511299
+  if (is.null(dec) || is.na(dec)) return(0.24)                          #shuusei202511299
+  
+  q_idx <- get_quintile_index_from_decile(dec)                          #shuusei202511299
+  return(SES_BUDGET_SHARE_Q[[q_idx]])                                   #shuusei202511299
+}                                                                       #shuusei202511299
+
 assign_inst_cap <- function(A) {
   if (A$status == "N") { # otherwise agents who have already adopted can change inst_cap!
-    inst_cap <- 0.3*A$income/kW_price_current
-    meet_demand <- A$consumption/(A$LF*24*365)
+    ## 予算ベースの容量（所得クインタイル別シェア）                     #shuusei20251129
+    share_Q <- get_budget_share_by_decile(A$inc_decile)                 #shuusei20251129
+    inst_cap_budget <- share_Q * A$income / kW_price_current            #shuusei20251129
     
-    if (meet_demand < inst_cap) inst_cap <- meet_demand
+    ## 需要ベースの容量（診断用 & 正規化用）                            #shuusei20251129
+    meet_demand <- A$consumption/(A$LF*24*365)                          #shuusei20251129
+    A$meet_demand <- meet_demand                                        #shuusei20251130
+    ## デフォルトは従来どおり「meet_demand 上限」                      #shuusei20251129
+    roof_limit <- meet_demand                                           #shuusei20251129
     
-    A$inst_cap <- inst_cap
-    if (inst_cap > 4) {   # would they be better off going for the lower investment?
-      ret_large <- annual_return(A)
-      large_cap <- A$inst_cap
-      A$inst_cap <- 4
-      ret_small <- annual_return(A)
-      if (ret_small > ret_large) A$inst_cap <- 4
-      else A$inst_cap <- large_cap
+    ## 所得デシルが付いている場合：                                   #shuusei20251129
+    ##  base_roof(dec) × meet_demand / mean_meet_demand_dec             #shuusei20251129
+    if (!is.null(A$inc_decile) && !is.na(A$inc_decile)) {               #shuusei20251129
+      base_roof <- get_roof_limit_by_decile(A$inc_decile)              #shuusei20251129
       
-      if (A$inst_cap > 10) A$inst_cap <- 10
+      scale_fac <- 1                                                    #shuusei20251129
+      if (exists("meet_dmd_ref_dec", inherits = TRUE)) {                #shuusei20251129
+        md_ref <- meet_dmd_ref_dec[A$inc_decile]                        #shuusei20251129
+        if (!is.na(md_ref) && md_ref > 0) {                             #shuusei20251129
+          scale_fac <- meet_demand / md_ref                             #shuusei20251129
+        }                                                               #shuusei20251129
+      }                                                                 #shuusei20251129
       
-    }
+      roof_limit <- base_roof * scale_fac                               #shuusei20251129
+    }                                                                   #shuusei20251129
+    
+    ## raw の容量（4kW/10kW 調整の前）                                 #shuusei20251130
+    ## ⇒ inst_cap_raw = min(inst_cap_budget, meet_demand)               #shuusei20251130
+    inst_cap_raw <- min(inst_cap_budget, meet_demand)                   #shuusei20251130
+    
+    ## raw 容量と制約要因をエージェントに記録                          #shuusei202511288
+    A$inst_cap_budget <- inst_cap_budget                                #shuusei202511288
+    A$roof_limit      <- roof_limit                                     #shuusei202511288
+    A$inst_cap_raw    <- inst_cap_raw                                   #shuusei202511288
+    
+    ## inst_cap_raw を決めた制約（budget / meet / tie）を記録          #shuusei20251130
+    if (is.na(inst_cap_raw)) {                                          #shuusei20251130
+      A$cap_raw_source <- NA_character_                                 #shuusei20251130
+    } else if (inst_cap_raw <= inst_cap_budget + 1e-6 &&                #shuusei20251130
+               inst_cap_raw <  meet_demand  - 1e-6) {                   #shuusei20251130
+      A$cap_raw_source <- "budget"                                      #shuusei20251130
+    } else if (inst_cap_raw <= meet_demand + 1e-6 &&                    #shuusei20251130
+               inst_cap_raw <  inst_cap_budget - 1e-6) {                #shuusei20251130
+      A$cap_raw_source <- "meet"                                        #shuusei20251130
+    } else {                                                            #shuusei20251130
+      A$cap_raw_source <- "tie"                                         #shuusei20251130
+    }                                                                   #shuusei20251130
+    
+    ## 4kW vs 大容量の選択結果（デフォルト: 選択なし）                 #shuusei202511288
+    A$cap_choice_type <- "no_choice"                                    #shuusei202511288
+    
+    ## まず raw 容量をそのまま入れる                                   #shuusei202511288
+    A$inst_cap <- inst_cap_raw                                          #shuusei202511288
+    
+    ## 4kW を選ぶか、大容量を選ぶかの判定                             #shuusei202511288
+    if (inst_cap_raw > 4) {   # would they be better off going for the lower investment? #shuusei202511288
+      ret_large <- annual_return(A)                                     #shuusei202511288
+      large_cap <- A$inst_cap                                           #shuusei202511288
+      A$inst_cap <- 4                                                   #shuusei202511288
+      ret_small <- annual_return(A)                                     #shuusei202511288
+      
+      if (ret_small > ret_large) {                                      #shuusei202511288
+        A$inst_cap <- 4                                                 #shuusei202511288
+        A$cap_choice_type <- "choose_4"                                 #shuusei202511288
+      } else {                                                          #shuusei202511288
+        A$inst_cap <- large_cap                                         #shuusei202511288
+        A$cap_choice_type <- "choose_large"                             #shuusei202511288
+      }                                                                 #shuusei202511288
+      
+      ## 10kW の上限でトランケート                                    #shuusei202511288
+      if (A$inst_cap > 10) {                                            #shuusei202511288
+        A$inst_cap <- 10                                                #shuusei202511288
+        if (A$cap_choice_type == "choose_large") {                      #shuusei202511288
+          A$cap_choice_type <- "choose_large_trunc10"                   #shuusei202511288
+        }                                                               #shuusei202511288
+      }                                                                 #shuusei202511288
+    }                                                                   #shuusei202511288
   }
   
   return(A)
@@ -455,18 +631,43 @@ output <- function(x, y) {
   P <- x*24*365*y
 }
 
+#soc_utility <- function(A, ags) {
+  #neighbours <- ags[A$network]
+  #links <- length(A$network)
+  #no_adopters <- sum(map_int(neighbours, "status") == 1)
+  #u_soc <- 1/(1+exp(1.2*((links/4)-no_adopters)))
+  
+#tyousei
 soc_utility <- function(A, ags) {
   neighbours <- ags[A$network]
   links <- length(A$network)
   no_adopters <- sum(map_int(neighbours, "status") == 1)
-  u_soc <- 1/(1+exp(1.2*((links/4)-no_adopters)))
+  u_soc <- 1/(1+exp(1.2*((links/4)-no_adopters)))  #shuusei20251128
+}
+
+#tyousei 
+#cap_utility <- function(A) {                                           #shuusei20251129
+  # 所得デシルごとの cap_share0 を使う                                #shuusei20251129
+#  cap_share0 <- get_cap_share0_by_decile(A$inc_decile)                #shuusei20251129
   
-}
+#  k_cap      <- 4                                                     #shuusei20251127
+  # ↑ ロジスティックの傾き。大きいほど 0/1 に近づきやすい（要調整）   #shuusei20251127
+  
+  # 所得に対する PV 投資額の比率（費用 / 所得）                        #shuusei20251127
+#  ratio <- (A$inst_cap * kW_price_current) / A$income                  #shuusei20251127
+  
+  # ratio = cap_share0 のとき u_cap = 0.5 になるロジスティック          #shuusei20251127
+  # ratio が小さいほど u_cap が 1 に近づき、大きいほど 0 に近づく      #shuusei20251127
+#  u_cap <- 1/(1 + exp((ratio - cap_share0) * k_cap))                   #shuusei20251127
+  
+#  return(u_cap)                                                        #shuusei20251127
+#}                        												#shuusei20251129
 
-cap_utility <- function(A) {
-  u_cap <- 1/(1+exp(-(0.2*A$income-A$inst_cap*kW_price_current)*0.0007))
-}
 
+cap_utility <- function(A) {                                           #shuusei202511299!
+  u_cap <- 1/(1 + exp(-(0.2 * A$income - A$inst_cap * kW_price_current) * 0.0007))  #shuusei202511299!
+  return(u_cap)                                                        #shuusei202511299!
+}                                                                       #shuusei202511299!
 #---------------------------- 1.3 Cost calculation ------------------------------#
 subs_cost <- function(adpts, rn, number_of_agents) {
   if (length(adpts) > 0) {
@@ -714,7 +915,69 @@ summarise_results <- function(avg_u, cost, cost_priv){
               cap_dec7   = mean(cap_dec7,   na.rm = TRUE),   #shuusei20251121
               cap_dec8   = mean(cap_dec8,   na.rm = TRUE),   #shuusei20251121
               cap_dec9   = mean(cap_dec9,   na.rm = TRUE),   #shuusei20251121
-              cap_dec10  = mean(cap_dec10,  na.rm = TRUE))   #shuusei20251121
+              cap_dec10  = mean(cap_dec10,  na.rm = TRUE),   #shuusei20251121
+              ## ここから新規：デシル別シェアのラン平均                 #shuusei202511288
+              budget_dec1  = mean(budget_dec1,  na.rm = TRUE), #shuusei202511288
+              budget_dec2  = mean(budget_dec2,  na.rm = TRUE), #shuusei202511288
+              budget_dec3  = mean(budget_dec3,  na.rm = TRUE), #shuusei202511288
+              budget_dec4  = mean(budget_dec4,  na.rm = TRUE), #shuusei202511288
+              budget_dec5  = mean(budget_dec5,  na.rm = TRUE), #shuusei202511288
+              budget_dec6  = mean(budget_dec6,  na.rm = TRUE), #shuusei202511288
+              budget_dec7  = mean(budget_dec7,  na.rm = TRUE), #shuusei202511288
+              budget_dec8  = mean(budget_dec8,  na.rm = TRUE), #shuusei202511288
+              budget_dec9  = mean(budget_dec9,  na.rm = TRUE), #shuusei202511288
+              budget_dec10 = mean(budget_dec10, na.rm = TRUE), #shuusei202511288
+              roof_dec1    = mean(roof_dec1,    na.rm = TRUE), #shuusei202511288
+              roof_dec2    = mean(roof_dec2,    na.rm = TRUE), #shuusei202511288
+              roof_dec3    = mean(roof_dec3,    na.rm = TRUE), #shuusei202511288
+              roof_dec4    = mean(roof_dec4,    na.rm = TRUE), #shuusei202511288
+              roof_dec5    = mean(roof_dec5,    na.rm = TRUE), #shuusei202511288
+              roof_dec6    = mean(roof_dec6,    na.rm = TRUE), #shuusei202511288
+              roof_dec7    = mean(roof_dec7,    na.rm = TRUE), #shuusei202511288
+              roof_dec8    = mean(roof_dec8,    na.rm = TRUE), #shuusei202511288
+              roof_dec9    = mean(roof_dec9,    na.rm = TRUE), #shuusei202511288
+              roof_dec10   = mean(roof_dec10,   na.rm = TRUE), #shuusei202511288
+              share_budget_dec1  = mean(share_budget_dec1,  na.rm = TRUE), #shuusei202511288
+              share_budget_dec2  = mean(share_budget_dec2,  na.rm = TRUE), #shuusei202511288
+              share_budget_dec3  = mean(share_budget_dec3,  na.rm = TRUE), #shuusei202511288
+              share_budget_dec4  = mean(share_budget_dec4,  na.rm = TRUE), #shuusei202511288
+              share_budget_dec5  = mean(share_budget_dec5,  na.rm = TRUE), #shuusei202511288
+              share_budget_dec6  = mean(share_budget_dec6,  na.rm = TRUE), #shuusei202511288
+              share_budget_dec7  = mean(share_budget_dec7,  na.rm = TRUE), #shuusei202511288
+              share_budget_dec8  = mean(share_budget_dec8,  na.rm = TRUE), #shuusei202511288
+              share_budget_dec9  = mean(share_budget_dec9,  na.rm = TRUE), #shuusei202511288
+              share_budget_dec10 = mean(share_budget_dec10, na.rm = TRUE), #shuusei202511288
+              share_roof_dec1    = mean(share_roof_dec1,    na.rm = TRUE), #shuusei202511288
+              share_roof_dec2    = mean(share_roof_dec2,    na.rm = TRUE), #shuusei202511288
+              share_roof_dec3    = mean(share_roof_dec3,    na.rm = TRUE), #shuusei202511288
+              share_roof_dec4    = mean(share_roof_dec4,    na.rm = TRUE), #shuusei202511288
+              share_roof_dec5    = mean(share_roof_dec5,    na.rm = TRUE), #shuusei202511288
+              share_roof_dec6    = mean(share_roof_dec6,    na.rm = TRUE), #shuusei202511288
+              share_roof_dec7    = mean(share_roof_dec7,    na.rm = TRUE), #shuusei202511288
+              share_roof_dec8    = mean(share_roof_dec8,    na.rm = TRUE), #shuusei202511288
+              share_roof_dec9    = mean(share_roof_dec9,    na.rm = TRUE), #shuusei202511288
+              share_roof_dec10   = mean(share_roof_dec10,   na.rm = TRUE), #shuusei202511288
+              share_4kw_dec1     = mean(share_4kw_dec1,     na.rm = TRUE), #shuusei202511288
+              share_4kw_dec2     = mean(share_4kw_dec2,     na.rm = TRUE), #shuusei202511288
+              share_4kw_dec3     = mean(share_4kw_dec3,     na.rm = TRUE), #shuusei202511288
+              share_4kw_dec4     = mean(share_4kw_dec4,     na.rm = TRUE), #shuusei202511288
+              share_4kw_dec5     = mean(share_4kw_dec5,     na.rm = TRUE), #shuusei202511288
+              share_4kw_dec6     = mean(share_4kw_dec6,     na.rm = TRUE), #shuusei202511288
+              share_4kw_dec7     = mean(share_4kw_dec7,     na.rm = TRUE), #shuusei202511288
+              share_4kw_dec8     = mean(share_4kw_dec8,     na.rm = TRUE), #shuusei202511288
+              share_4kw_dec9     = mean(share_4kw_dec9,     na.rm = TRUE), #shuusei202511288
+              share_4kw_dec10    = mean(share_4kw_dec10,    na.rm = TRUE), #shuusei202511288
+              share_large_dec1   = mean(share_large_dec1,   na.rm = TRUE), #shuusei202511288
+              share_large_dec2   = mean(share_large_dec2,   na.rm = TRUE), #shuusei202511288
+              share_large_dec3   = mean(share_large_dec3,   na.rm = TRUE), #shuusei202511288
+              share_large_dec4   = mean(share_large_dec4,   na.rm = TRUE), #shuusei202511288
+              share_large_dec5   = mean(share_large_dec5,   na.rm = TRUE), #shuusei202511288
+              share_large_dec6   = mean(share_large_dec6,   na.rm = TRUE), #shuusei202511288
+              share_large_dec7   = mean(share_large_dec7,   na.rm = TRUE), #shuusei202511288
+              share_large_dec8   = mean(share_large_dec8,   na.rm = TRUE), #shuusei202511288
+              share_large_dec9   = mean(share_large_dec9,   na.rm = TRUE), #shuusei202511288
+              share_large_dec10  = mean(share_large_dec10,  na.rm = TRUE)  #shuusei202511288
+    )
   
   
   avg_cost <<- cost %>% group_by(time_series) %>% summarise(annual_cost = mean(annual_cost))
@@ -735,6 +998,139 @@ calc_quintile_cap <- function(cap_dec_vec) {                            #shuusei
   )                                                                     #shuusei20251121
   return(q_caps)                                                        #shuusei20251121
 }                                                                       #shuusei20251121
+
+
+# クインタイル別に inst_cap_budget / roof_limit の平均をプロットする関数     #shuusei202511288
+plot_budget_roof_by_quintile <- function(cutoff_date = dmy("01oct2015")) { #shuusei202511288
+  if (!exists("averages")) {                                              #shuusei202511288
+    stop("averages が見つかりません。batch_run_func() または load_plot_sim_data() 実行後に呼んでください。") #shuusei202511288
+  }                                                                       #shuusei202511288
+  
+  row_q <- which(averages$time_series == cutoff_date)                    #shuusei202511288
+  if (length(row_q) != 1) {                                               #shuusei202511288
+    stop("cutoff_date が averages$time_series に一意に見つかりません。") #shuusei202511288
+  }                                                                       #shuusei202511288
+  
+  decs <- 1:10                                                            #shuusei202511288
+  bud_dec  <- as.numeric(averages[row_q, paste0("budget_dec", decs)])     #shuusei202511288
+  roof_dec <- as.numeric(averages[row_q, paste0("roof_dec",   decs)])     #shuusei202511288
+  frac_dec <- as.numeric(averages[row_q, paste0("frac_dec",   decs)])     #shuusei202511288
+  
+  ## デシル → クインタイル（D1-2→Q1, D3-4→Q2, ...）                  #shuusei202511288
+  dec_to_Q <- list(Q1 = 1:2, Q2 = 3:4, Q3 = 5:6, Q4 = 7:8, Q5 = 9:10)    #shuusei202511288
+  
+  ## 導入率 frac_dec を重みとして「導入世帯ベースの平均」をとる         #shuusei202511288
+  make_Q_mean <- function(x_dec) {                                       #shuusei202511288
+    sapply(dec_to_Q, function(idx) {                                     #shuusei202511288
+      x <- x_dec[idx]                                                    #shuusei202511288
+      w <- frac_dec[idx]                                                 #shuusei202511288
+      if (all(is.na(x)) || all(is.na(w)) || sum(w, na.rm = TRUE) == 0) { #shuusei202511288
+        return(NA_real_)                                                 #shuusei202511288
+      }                                                                  #shuusei202511288
+      sum(x * w, na.rm = TRUE) / sum(w, na.rm = TRUE)                    #shuusei202511288
+    })                                                                   #shuusei202511288
+  }                                                                      #shuusei202511288
+  
+  bud_Q  <- make_Q_mean(bud_dec)                                         #shuusei202511288
+  roof_Q <- make_Q_mean(roof_dec)                                        #shuusei202511288
+  
+  quintiles <- factor(names(bud_Q), levels = paste0("Q", 1:5))           #shuusei202511288
+  
+  df_Q <- tibble(                                                        #shuusei20251130
+    quintile = rep(quintiles, times = 2),                                #shuusei20251130
+    type     = rep(c("inst_cap_budget", "meet_demand_limit"), each = 5), #shuusei20251130
+    value_kW = c(bud_Q, roof_Q)                                          #shuusei20251130
+  )                                                                       #shuusei20251130
+  
+  p <- ggplot(df_Q, aes(x = quintile, y = value_kW, fill = type)) +      #shuusei20251130
+    geom_col(position = "dodge") +                                       #shuusei20251130
+    ylab("Average capacity per adopter (kW)") +                          #shuusei20251130
+    xlab("SES quintile") +                                               #shuusei20251130
+    ggtitle(paste0("inst_cap_budget vs meet_demand limit by SES quintile at ",
+                   format(cutoff_date, "%Y-%m-%d"))) +                   #shuusei20251130
+    theme_bw()                                                           #shuusei20251130
+  
+  print(p)                                                               #shuusei202511288
+}                                                                        #shuusei202511288
+
+# inst_cap の制約要因と 4kW vs 大容量の選択を SES 五分位別に可視化する関数  #shuusei202511288
+plot_cap_constraints_by_quintile <- function(cutoff_date = dmy("01oct2015")) { #shuusei202511288
+  if (!exists("averages")) {                                           #shuusei202511288
+    stop("averages が見つかりません。batch_run_func() または load_plot_sim_data() 実行後に呼んでください。") #shuusei202511288
+  }                                                                    #shuusei202511288
+  
+  row_q <- which(averages$time_series == cutoff_date)                 #shuusei202511288
+  if (length(row_q) != 1) {                                            #shuusei202511288
+    stop("cutoff_date が averages$time_series に一意に見つかりません。") #shuusei202511288
+  }                                                                    #shuusei202511288
+  
+  decs <- 1:10                                                         #shuusei202511288
+  share_budget_dec <- as.numeric(averages[row_q,                       #shuusei202511288
+                                          paste0("share_budget_dec",decs)]) #shuusei202511288
+  share_roof_dec   <- as.numeric(averages[row_q,                       #shuusei202511288
+                                          paste0("share_roof_dec",decs)])   #shuusei202511288
+  share_4kw_dec    <- as.numeric(averages[row_q,                       #shuusei202511288
+                                          paste0("share_4kw_dec",decs)])    #shuusei202511288
+  share_large_dec  <- as.numeric(averages[row_q,                       #shuusei202511288
+                                          paste0("share_large_dec",decs)])  #shuusei202511288
+  frac_dec         <- as.numeric(averages[row_q,                       #shuusei202511288
+                                          paste0("frac_dec",decs)])        #shuusei202511288
+  
+  ## decile → quintile （デシル内の導入率で重み付け平均）            #shuusei202511288
+  dec_to_Q <- list(Q1 = 1:2, Q2 = 3:4, Q3 = 5:6, Q4 = 7:8, Q5 = 9:10) #shuusei202511288
+  w <- frac_dec                                                       #shuusei202511288
+  
+  make_Q <- function(x_dec) {                                         #shuusei202511288
+    sapply(dec_to_Q, function(idx) {                                  #shuusei202511288
+      ww <- w[idx]                                                    #shuusei202511288
+      xx <- x_dec[idx]                                                #shuusei202511288
+      if (all(is.na(xx)) || all(is.na(ww)) || sum(ww, na.rm = TRUE) == 0) { #shuusei202511288
+        return(NA_real_)                                              #shuusei202511288
+      }                                                                #shuusei202511288
+      sum(xx * ww, na.rm = TRUE) / sum(ww, na.rm = TRUE)              #shuusei202511288
+    })                                                                #shuusei202511288
+  }                                                                   #shuusei202511288
+  
+  bud_Q   <- make_Q(share_budget_dec)                                 #shuusei202511288
+  roof_Q  <- make_Q(share_roof_dec)                                   #shuusei202511288
+  four_Q  <- make_Q(share_4kw_dec)                                    #shuusei202511288
+  large_Q <- make_Q(share_large_dec)                                  #shuusei202511288
+  
+  quintiles <- factor(names(bud_Q), levels = paste0("Q",1:5))         #shuusei202511288
+  
+  ## inst_cap_budget vs meet_demand limit のグラフ（クインタイル別）   #shuusei20251130
+  df_limit <- tibble(                                                 #shuusei20251130
+    quintile = rep(quintiles, times = 2),                             #shuusei20251130
+    source   = rep(c("Budget limit","Meet-demand limit"), each = 5),  #shuusei20251130
+    share    = c(bud_Q, roof_Q)                                       #shuusei20251130
+  )                                                                   #shuusei20251130
+  
+  p1 <- ggplot(df_limit, aes(x = quintile, y = share, fill = source)) + #shuusei20251130
+    geom_col(position = "dodge") +                                    #shuusei20251130
+    ylim(0, 1) +                                                      #shuusei20251130
+    ylab("Share of adopters (within quintile)") +                     #shuusei20251130
+    xlab("SES quintile") +                                            #shuusei20251130
+    ggtitle("inst_cap_budget vs meet_demand limit by SES quintile") + #shuusei20251130
+    theme_bw()                                                        #shuusei20251130
+  
+  print(p1)                                                           #shuusei202511288
+  
+  ## 4kW vs 大容量（inst_cap_raw > 4kW の世帯のみ）                    #shuusei202511288
+  df_choice <- tibble(                                                #shuusei202511288
+    quintile = rep(quintiles, times = 2),                             #shuusei202511288
+    choice   = rep(c("Choose 4 kW","Choose >4 kW"), each = 5),        #shuusei202511288
+    share    = c(four_Q, large_Q)                                     #shuusei202511288
+  )                                                                   #shuusei202511288
+  
+  p2 <- ggplot(df_choice, aes(x = quintile, y = share, fill = choice)) + #shuusei202511288
+    geom_col(position = "dodge") +                                    #shuusei202511288
+    ylim(0, 1) +                                                      #shuusei202511288
+    ylab("Share among households with raw inst_cap > 4 kW") +         #shuusei202511288
+    xlab("SES quintile") +                                            #shuusei202511288
+    ggtitle("4 kW vs large-capacity choice by SES quintile") +        #shuusei202511288
+    theme_bw()                                                        #shuusei202511288
+  print(p2)                                                           #shuusei202511288
+}                                                                     #shuusei202511288
 
 
 load_plot_sim_data <- function(save_name, plot_u = T, plot_cost = T, plot_prod = T){
@@ -805,33 +1201,40 @@ load_plot_sim_data <- function(save_name, plot_u = T, plot_cost = T, plot_prod =
           scale_colour_manual(name = "", values = c(Modelled = "black", Real = "blue")))
   
   
-  print(ggplot() + theme_bw() + 
-          geom_line(data = deployment, aes(x = time_series, y = real_cap, color = "Real"), size = 1) + 
-          geom_line(data = avg_u, aes(x = time_series, 
-                                      y = tot_inst_cap, group = run_number), alpha = 0.2)+
-          geom_line(data = averages, aes(x = time_series, y = tot_inst_cap, color = "Modelled"), size = 1) +
-          ylab("Cumulative capacity (MW)") + xlab("Date") +
-          scale_colour_manual(name = "", values = c(Modelled = "black", Real = "red")) +
-          theme(legend.position = c(0.2, 0.75)) + scale_x_date(expand = c(0,0)) + 
-          scale_y_continuous(expand = c(0,0), limits = c(0, max(avg_u$tot_inst_cap) + 100))
-  )
+  print(ggplot() + theme_bw() +                                        #shuusei202511288
+          geom_line(data = deployment, aes(x = time_series, y = real_cap, color = "Real"), size = 1) +  #shuusei202511288
+          geom_line(data = avg_u, aes(x = time_series,                 #shuusei202511288
+                                      y = tot_inst_cap, group = run_number), alpha = 0.2)+  #shuusei202511288
+          geom_line(data = averages, aes(x = time_series, y = tot_inst_cap, color = "Modelled"), size = 1) + #shuusei202511288
+          ylab("Cumulative capacity (MW)") + xlab("Date") +            #shuusei202511288
+          scale_colour_manual(name = "", values = c(Modelled = "black", Real = "red")) + #shuusei202511288
+          theme(legend.position = c(0.2, 0.75)) + scale_x_date(expand = c(0,0)) +  #shuusei202511288
+          scale_y_continuous(expand = c(0,0), limits = c(0, max(avg_u$tot_inst_cap) + 100)) #shuusei202511288
+  )                                                                    #shuusei202511288
   
-  # デシル別導入率の推移（保存済み結果）                          #shuusei202511122
-  dec_vars <- paste0("frac_dec", 1:10)                                  #shuusei20251118
-  if (all(dec_vars %in% names(averages))) {                             #shuusei20251118
-    dec_df <- averages %>%                                              #shuusei20251118
-      select(time_series, all_of(dec_vars)) %>%                         #shuusei20251118
-      pivot_longer(cols = starts_with("frac_dec"),                      #shuusei20251118
-                   names_to = "decile", values_to = "frac") %>%         #shuusei20251118
-      mutate(decile = str_replace(decile, "frac_dec", "D")) %>%         #shuusei20251118
-      mutate(decile = factor(decile,                                    #shuusei20251122
-                             levels = paste0("D", 10:1)))               #shuusei20251122
+  # SES 五分位別「累積導入容量（MW）」の推移（保存済み結果）        #shuusei202511288
+  cap_dec_vars <- paste0("cap_dec", 1:10)                               #shuusei202511288
+  if (all(cap_dec_vars %in% names(averages))) {                         #shuusei202511288
+    ## 各時点ごとの cap_dec1〜10 から Q1〜Q5 を計算                  #shuusei202511288
+    cap_mat   <- as.matrix(averages[, cap_dec_vars])                    #shuusei202511288
+    cap_Q_mat <- t(apply(cap_mat, 1, calc_quintile_cap))                #shuusei202511288
     
-    print(ggplot(dec_df) + theme_bw() +                                 #shuusei20251118
-            geom_line(aes(x = time_series, y = frac, color = decile)) + #shuusei20251118
-            ylab("Fraction of adopters by income decile") +             #shuusei20251118
-            xlab("Date"))                                               #shuusei20251118
-  }                                                                     #shuusei20251118
+    cap_Q_df <- cbind(                                                  #shuusei202511288
+      time_series = averages$time_series,                               #shuusei202511288
+      as.data.frame(cap_Q_mat)                                          #shuusei202511288
+    )                                                                   #shuusei202511288
+    
+    cap_Q_long <- cap_Q_df %>%                                          #shuusei202511288
+      pivot_longer(cols = starts_with("Q"),                             #shuusei202511288
+                   names_to = "quintile",                               #shuusei202511288
+                   values_to = "cap_MW")                                #shuusei202511288
+    
+    print(ggplot(cap_Q_long) + theme_bw() +                             #shuusei202511288
+            geom_line(aes(x = time_series, y = cap_MW,                  #shuusei202511288
+                          color = quintile)) +                          #shuusei202511288
+            ylab("Cumulative capacity by SES quintile (MW)") +          #shuusei202511288
+            xlab("Date"))                                               #shuusei202511288
+  }                                                                     #shuusei202511288
   
   if (plot_cost == T){
     print(ggplot() + theme_bw() + 

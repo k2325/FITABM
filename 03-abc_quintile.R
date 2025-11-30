@@ -16,63 +16,66 @@ load_data()                                                             #shuusei
 ## 2. SES 五分位別 CAPACITY のターゲット（MW）                         #shuusei20251121
 ## Table 2 の CAPACITY 行 [kW] を 1000 で割って MW に変換
 target_cap_Q <- c(                                                      #shuusei20251121
-  Q1 = 262865,                                                          #shuusei20251121
-  Q2 = 289358,                                                          #shuusei20251121
-  Q3 = 387503,                                                          #shuusei20251121
-  Q4 = 498556,                                                          #shuusei20251121
-  Q5 = 466102                                                           #shuusei20251121
+  Q1 = 288900,                                                          #shuusei20251121
+  Q2 = 318017,                                                          #shuusei20251121
+  Q3 = 452882,                                                          #shuusei20251121
+  Q4 = 547935,                                                          #shuusei20251121
+  Q5 = 512266                                                           #shuusei20251121
 ) / 1000                                                                #shuusei20251121   # 単位: MW
 
 ## 3. 1 パラメータセットに対するサマリー統計量                        #shuusei20251121
-simulate_summary <- function(w, t, n_agents = n_agents_abc) {           #shuusei20251118
-  res <- run_model(number_of_agents = n_agents, rn = 1,                 #shuusei20251121
-                   w = w, threshold = t)                                #shuusei20251121
+simulate_summary <- function(w, t, n_agents = n_agents_abc) {           #shuusei20251127
+  res <- run_model(number_of_agents = n_agents, rn = 1,                 #shuusei20251127
+                   w = w, threshold = t)                                #shuusei20251127
   
-  avg_u_run <- res[[1]]                                                 #shuusei20251121
+  avg_u_run <- res[[1]]                                                 #shuusei20251127
   
-  ## 3-1. 2010〜2015/9/30 までの全国累積容量の誤差                    #shuusei20251121
-  cutoff <- dmy("01oct2015")                                           #shuusei20251121
-  idx <- which(avg_u_run$time_series <= cutoff)                         #shuusei20251121
+  ## 3-1. 「利用可能な期間すべて」の全国累積容量の誤差               #shuusei20251127
+  ## モデルと実データで共通の日付だけを取り出して比較する           #shuusei20251127
+  common_dates <- intersect(avg_u_run$time_series,                      #shuusei20251127
+                            deployment$time_series)                     #shuusei20251127
+  idx_model <- match(common_dates, avg_u_run$time_series)              #shuusei20251127
+  idx_real  <- match(common_dates, deployment$time_series)             #shuusei20251127
   
-  dep_model <- avg_u_run$tot_inst_cap[idx]                              #shuusei20251121
-  dep_real  <- deployment$real_cap[idx]                                 #shuusei20251121
+  dep_model <- avg_u_run$tot_inst_cap[idx_model]                        #shuusei20251127
+  dep_real  <- deployment$real_cap[idx_real]                            #shuusei20251127
   
-  err_dep <- mean(abs(dep_model - dep_real))                            #shuusei20251121
+  err_dep <- mean(abs(dep_model - dep_real))                            #shuusei20251127
   
-  ## 3-2. 2015/9/30 時点の Q1〜Q5 CAPACITY（MW）                      #shuusei20251121
-  row_q <- which(avg_u_run$time_series == cutoff)                       #shuusei20251121
-  if (length(row_q) != 1) stop("cutoff date not found in avg_u_run")    #shuusei20251121
+  ## 3-2. 2015/9/30 時点の Q1〜Q5 CAPACITY（Table 2 に合わせる）      #shuusei20251127
+  cutoff_q <- dmy("01oct2015")                                          #shuusei20251127
+  row_q <- which(avg_u_run$time_series == cutoff_q)                     #shuusei20251127
+  if (length(row_q) != 1) stop("cutoff date not found in avg_u_run")    #shuusei20251127
   
-  cap_dec <- as.numeric(avg_u_run[row_q,                                #shuusei20251121
-                                  paste0("cap_dec", 1:10)])             #shuusei20251121
-  cap_Q_model <- calc_quintile_cap(cap_dec)                             #shuusei20251121
+  cap_dec <- as.numeric(avg_u_run[row_q,
+                                  paste0("cap_dec", 1:10)])             #shuusei20251127
+  cap_Q_model <- calc_quintile_cap(cap_dec)                             #shuusei20251127
   
-  ## 3-2a. 全く導入がない（またはほぼゼロ）のケースに強いペナルティ    #shuusei20251122
-  total_cap_Q <- sum(cap_Q_model, na.rm = TRUE)                         #shuusei20251122
-  if (total_cap_Q < 1e-6) {                                             #shuusei20251122
-    # 完全に導入ゼロの run は ABC から事実上除外したいので            #shuusei20251122
-    # err_dep, err_Q を非常に大きな値にして返す                        #shuusei20251122
-    return(c(err_dep = 1e6, err_Q = 1e6))                               #shuusei20251122
-  }                                                                     #shuusei20251122
+  ## 3-2a. 全く導入がない（またはほぼゼロ）のケースに強いペナルティ
+  total_cap_Q <- sum(cap_Q_model, na.rm = TRUE)
+  if (total_cap_Q < 1e-6) {
+    return(c(err_dep = 1e6, err_Q = 1e6))
+  }
   
-  rel_err_Q <- abs(cap_Q_model - target_cap_Q) / target_cap_Q           #shuusei20251121
-  err_Q <- mean(rel_err_Q)                                              #shuusei20251121
+  rel_err_Q <- abs(cap_Q_model - target_cap_Q) / target_cap_Q
+  err_Q <- mean(rel_err_Q)
   
-  c(err_dep = err_dep, err_Q = err_Q)                                   #shuusei20251121
-}                                                                       #shuusei20251121
+  c(err_dep = err_dep, err_Q = err_Q)
+}
+
 
 ## 4. ABC 設定（ガウス事前分布）                                      #shuusei20251122
 set.seed(123)                                                           #shuusei20251122
-n_sim <- 1000                                                         #shuusei20251122  # 本番 ABC で回す本数
+n_sim <- 300                                                         #shuusei20251122  # 本番 ABC で回す本数
 
 ## エージェント数の設定（予備スキャン / 本番ABC）                     #shuusei20251118
-n_agents_scan <- 1000                                                  #shuusei20251118  # 予備スキャン用（軽め）  
-n_agents_abc  <- 1000                                                  #shuusei20251118  # 本番ABC用（やや重め）
+n_agents_scan <- 300                                                  #shuusei20251118  # 予備スキャン用（軽め）  
+n_agents_abc  <- 300                                                  #shuusei20251118  # 本番ABC用（やや重め）
 
 ## 4-1. 事前分布の中心を探すための「予備スキャン」                     #shuusei20251122
 use_auto_prior   <- TRUE                                                #shuusei20251122  # TRUE: 一様分布から自動で prior の平均を作る
-n_scan           <- 1000                                                 #shuusei20251122  # 予備スキャンで回す本数
-top_k_for_prior  <- 10                                                  #shuusei20251122  # 距離が小さい上位何本から prior 平均を作るか
+n_scan           <- 300                                                 #shuusei20251122  # 予備スキャンで回す本数
+top_k_for_prior  <- 3                                                  #shuusei20251122  # 距離が小さい上位何本から prior 平均を作るか
 
 if (use_auto_prior) {                                                   #shuusei20251122
   
@@ -119,7 +122,11 @@ if (use_auto_prior) {                                                   #shuusei
   
   ## 4-1-2. リストを行列にまとめる                                     #shuusei20251122
   scan_res <- do.call(rbind, scan_list)                                 #shuusei20251122
-  scan_df  <- as.data.frame(scan_res)                                   #shuusei20251122
+  scan_res <- as.matrix(scan_res)                                       #shuusei20251127
+  colnames(scan_res) <- c("w_inc","w_soc","w_ec",                       #shuusei20251127
+                          "t","err_dep","err_Q")                        #shuusei20251127
+  scan_df  <- as.data.frame(scan_res,                                   #shuusei20251127
+                            stringsAsFactors = FALSE)                   #shuusei20251127
   
   ## 4-1-3. 誤差を標準化して距離を定義                                  #shuusei20251122
   scan_df$dist <- scale(scan_df$err_dep) + scale(scan_df$err_Q)         #shuusei20251122
@@ -132,6 +139,14 @@ if (use_auto_prior) {                                                   #shuusei
   
   ## 4-1-4. 距離の小さい上位 top_k_for_prior 本だけを抽出               #shuusei20251122
   best_scan <- scan_df[order(scan_df$dist), ][1:top_k_for_prior, ]      #shuusei20251122
+  
+  ## 4-1-4b. 予備スキャンで採用されたパラメータと誤差を保存            #shuusei20251127
+  prior_selected_params <- best_scan %>%                                #shuusei20251127
+    dplyr::select(w_inc, w_soc, w_ec, t, err_dep, err_Q)                #shuusei20251127
+  print(prior_selected_params)                                          #shuusei20251127
+  write_tsv(prior_selected_params,                                      #shuusei20251127
+            "Data/prior_selected_params_with_err.txt",                  #shuusei20251127
+            col_names = TRUE)                                           #shuusei20251127
   
   ## 4-1-5. その平均を prior の平均として採用                           #shuusei20251122
   prior_mean <- c(                                                       #shuusei20251122
@@ -271,6 +286,20 @@ keep   <- order(distances)[1:n_keep]                                    #shuusei
 
 allowed_params_quint <- as.data.frame(param_draws[keep, ])              #shuusei20251121
 
+## 7-1. 事後サンプルごとの err_dep, err_Q, distance を付けた表        #shuusei20251127
+posterior_params_full <- allowed_params_quint                           #shuusei20251127
+posterior_params_full$err_dep <- err_dep_all[keep]                      #shuusei20251127
+posterior_params_full$err_Q   <- err_Q_all[keep]                        #shuusei20251127
+posterior_params_full$distance <- distances[keep]                       #shuusei20251127
+
+print(posterior_params_full)                                            #shuusei20251127
+
+## 従来通り：パラメータだけのファイル（既存コードとの互換性用）      #shuusei20251127
 write_tsv(allowed_params_quint,                                         #shuusei20251121
           "Data/allowed_params_quintile.txt",                           #shuusei20251121
           col_names = FALSE)                                            #shuusei20251121
+
+## 新規：パラメータ＋誤差＋距離を含むファイル                        #shuusei20251127
+write_tsv(posterior_params_full,                                        #shuusei20251127
+          "Data/allowed_params_quintile_with_err.txt",                  #shuusei20251127
+          col_names = TRUE)                                             #shuusei20251127
