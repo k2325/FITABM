@@ -39,8 +39,8 @@ load_data()
 # To run the simulation:
 
 ## 1 行目・2 行目…と「順番に」使う
-results_seq <- batch_run_func(number_of_runs    = 3,
-                              number_of_agents  = 300,
+results_seq <- batch_run_func(number_of_runs    = 5,
+                              number_of_agents  = 500,
                               use_random_params = FALSE,
                               save_name = "test")
 

@@ -66,16 +66,16 @@ simulate_summary <- function(w, t, n_agents = n_agents_abc) {           #shuusei
 
 ## 4. ABC 設定（ガウス事前分布）                                      #shuusei20251122
 set.seed(123)                                                           #shuusei20251122
-n_sim <- 300                                                         #shuusei20251122  # 本番 ABC で回す本数
+n_sim <-500                                                         #shuusei20251122  # 本番 ABC で回す本数
 
 ## エージェント数の設定（予備スキャン / 本番ABC）                     #shuusei20251118
-n_agents_scan <- 300                                                  #shuusei20251118  # 予備スキャン用（軽め）  
-n_agents_abc  <- 300                                                  #shuusei20251118  # 本番ABC用（やや重め）
+n_agents_scan <- 500                                                  #shuusei20251118  # 予備スキャン用（軽め）  
+n_agents_abc  <- 500                                                  #shuusei20251118  # 本番ABC用（やや重め）
 
 ## 4-1. 事前分布の中心を探すための「予備スキャン」                     #shuusei20251122
 use_auto_prior   <- TRUE                                                #shuusei20251122  # TRUE: 一様分布から自動で prior の平均を作る
-n_scan           <- 300                                                 #shuusei20251122  # 予備スキャンで回す本数
-top_k_for_prior  <- 3                                                  #shuusei20251122  # 距離が小さい上位何本から prior 平均を作るか
+n_scan           <- 500                                                 #shuusei20251122  # 予備スキャンで回す本数
+top_k_for_prior  <- 5                                                  #shuusei20251122  # 距離が小さい上位何本から prior 平均を作るか
 
 if (use_auto_prior) {                                                   #shuusei20251122
   
