@@ -235,7 +235,6 @@ sim_results <- pblapply(1:n_sim, cl = cl, FUN = function(i) {           #shuusei
   ## 5-1. 0〜1 制約 & w_cap>=0 を満たすまで再サンプリング             #shuusei20251121
   repeat {                                                              #shuusei20251121
     draw <- rnorm(4, mean = prior_mean, sd = prior_sd)                  #shuusei20251121
-    ...
     names(draw) <- names(prior_mean)                                    #shuusei20251121
     
     ## 0〜1 の範囲チェック                                            #shuusei20251121
