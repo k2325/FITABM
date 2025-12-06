@@ -92,7 +92,8 @@ if (use_auto_prior) {                                                   #shuusei
   clusterExport(cl_scan,                                                #shuusei20251206
                 varlist = c("simulate_summary",                         #shuusei20251206
                             "target_cap_Q",                             #shuusei20251206
-                            "n_agents_scan"))                           #shuusei20251206
+                            "n_agents_scan",                            #shuusei20251206
+                            "n_scan"))                                  #shuusei20251206  ★追加
   
   clusterSetRNGStream(cl_scan, 456)                                     #shuusei20251206
   
@@ -224,7 +225,8 @@ clusterExport(cl,                                                       #shuusei
               varlist = c("simulate_summary",                           #shuusei20251206
                           "target_cap_Q",                               #shuusei20251206
                           "n_agents_abc",                               #shuusei20251206
-                          "prior_mean", "prior_sd"))                    #shuusei20251206
+                          "prior_mean", "prior_sd",                     #shuusei20251206
+                          "n_sim"))                                     #shuusei20251206  ★追加
 
 clusterSetRNGStream(cl, 123)                                            #shuusei20251206
 
