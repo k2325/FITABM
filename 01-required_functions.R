@@ -452,7 +452,12 @@ assign_region <- function() {                                             #shuus
   }                                                                       #shuusei20251206
   rw <- rw / s                                                            #shuusei20251206
   
-  sample(LETTERS[1:11], size = 1, prob = rw)                             #shuusei20251206
+  # sample() 失敗時には一様分布にフォールバック                         #shuusei20251206
+  idx <- tryCatch(                                                        #shuusei20251206
+    sample.int(11L, size = 1L, prob = rw),                                #shuusei20251206
+    error = function(e) sample.int(11L, size = 1L)                        #shuusei20251206
+  )                                                                       #shuusei20251206
+  LETTERS[idx]                                                            #shuusei20251206
 }                                                                         #shuusei20251206
 
 assign_soc_network <- function(A, n_ag, n_l) {
@@ -517,17 +522,21 @@ assign_smallworld_network <- function(agents,
       if (n_add <= 0L) next                                             #shuusei20251205
       n_add <- min(n_add, length(cand_idx))                             #shuusei20251205
       
-      ## sample() に渡す前の最終チェック                                 #shuusei20251206
+      # sample() に渡す前の最終チェック + 保険として tryCatch           #shuusei20251206
       w <- as.numeric(w)                                                #shuusei20251206
-      if (length(w) != length(cand_idx) ||                               #shuusei20251206
-          any(!is.finite(w)) ||                                         #shuusei20251206
-          sum(w) <= 0) {                                                #shuusei20251206
-        # 何かおかしければ確率なし（＝一様）でサンプル                   #shuusei20251206
-        sel <- sample(cand_idx, size = n_add, replace = FALSE)          #shuusei20251206
-      } else {                                                          #shuusei20251206
-        w <- w / sum(w)                                                 #shuusei20251206
-        sel <- sample(cand_idx, size = n_add, replace = FALSE, prob = w) #shuusei20251206
-      }                                                                 #shuusei20251206
+      sel <- tryCatch({                                                 #shuusei20251206
+        if (length(w) == length(cand_idx) &&                            #shuusei20251206
+            all(is.finite(w)) &&                                        #shuusei20251206
+            sum(w) > 0) {                                               #shuusei20251206
+          w <- w / sum(w)                                               #shuusei20251206
+          sample(cand_idx, size = n_add, replace = FALSE, prob = w)     #shuusei20251206
+        } else {                                                        #shuusei20251206
+          sample(cand_idx, size = n_add, replace = FALSE)               #shuusei20251206
+        }                                                               #shuusei20251206
+      }, error = function(e) {                                          #shuusei20251206
+        # もし何かあっても、最終的には一様サンプルにフォールバック    #shuusei20251206
+        sample(cand_idx, size = n_add, replace = FALSE)                 #shuusei20251206
+      })                                                                #shuusei20251206
       
       for (j in sel){                                                   #shuusei20251205
         if (i == j) next                                                #shuusei20251205
