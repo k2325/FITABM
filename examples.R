@@ -123,14 +123,14 @@ load_data()   # すでに呼んでいれば省略してOK
 
 ## 1. 仮想エージェントを生成し、meet_demand と income を出す -----
 
-number_of_agents <- 500   # 好きな数でOK（500〜5000くらい）
+number_of_agents <- 300   # 好きな数でOK（500〜5000くらい）
 
 agents <- rerun(
   number_of_agents,
   Household_Agent("N",
-                  assign_income(),   # 所得をサンプリング
-                  assign_size(),     # 世帯人数をサンプリング
-                  assign_region())   # 地域をサンプリング
+                  assign_income("own"),  # owner‑occupier として所得をサンプリング #shuusei20251206
+                  "own",                 # テニュア（所有）                        #shuusei20251206
+                  assign_region())       # 地域をサンプリング                      #shuusei20251206
 )
 
 n_links     <- 10
@@ -152,7 +152,7 @@ df_md <- export_meet_demand_vs_income(
 ## 2. クインタイル別に「所得×シェアの予算」と meet_demand を計算 -----
 
 ## どの日の PV 価格で「所得×シェア」を見るか（ここでは 2015-10-01）
-d_ref <- dmy("01oct2016")
+d_ref <- dmy("01oct2015")                                              #shuusei20251206
 
 kW_price_ref <- kW_price %>%
   filter(X1 == d_ref) %>%
@@ -168,15 +168,9 @@ df_q <- df_md %>%
     # 所得クインタイル（1 = 低所得, 5 = 高所得）
     quintile = ntile(income, 5),
     
-    # ★ここでクインタイルごとの「所得に対する割合」を手動で指定
-    #   例：Q1〜Q5 = 30%, 27%, 24%, 21%, 18%
-    budget_share = case_when(
-      quintile == 1 ~ 0.30,  # Q1: 所得の 30%
-      quintile == 2 ~ 0.30,  # Q2: 所得の 27%
-      quintile == 3 ~ 0.30,  # Q3: 所得の 24%
-      quintile == 4 ~ 0.30,  # Q4: 所得の 21%
-      quintile == 5 ~ 0.30,  # Q5: 所得の 18%
-    ),
+    # SES_BUDGET_SHARE_Q （01-required_functions.R）をそのまま利用       #shuusei20251206
+    # 例: c(0.30, 0.27, 0.24, 0.21, 0.18) などに変更すれば自動で反映        #shuusei20251206
+    budget_share = SES_BUDGET_SHARE_Q[quintile],                        #shuusei20251206
     
     # 所得 ×（クインタイル別シェア）を PV に使った場合の「予算ベース容量」(kW)
     inst_cap_budget = budget_share * income / kW_price_ref
@@ -246,3 +240,6 @@ ggplot() +
 
 ##################メモ
 
+sw_debug
+sw_debug$fallback_stage1 / sw_debug$total_calls
+sw_debug$fallback_stage2 / sw_debug$total_calls

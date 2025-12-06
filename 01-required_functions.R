@@ -465,11 +465,18 @@ assign_soc_network <- function(A, n_ag, n_l) {
   return(A)
 }
 
+# small‑world ネットワークのフォールバック監視用カウンタ           #shuusei20251206
+sw_debug <<- list(                                                     #shuusei20251206
+  total_calls      = 0L,                                               #shuusei20251206
+  fallback_stage1  = 0L,  # w 全部 NA/0 で一様にした回数              #shuusei20251206
+  fallback_stage2  = 0L   # 最終チェックで一様サンプルに落とした回数  #shuusei20251206
+)                                                                      #shuusei20251206
+
 # 所得×地域に依存した small‑world ネットワークを構成                #shuusei20251205
 assign_smallworld_network <- function(agents,
-                                      k       = 10,                      #shuusei20251205
-                                      alpha   = 0.05,                    #shuusei20251205
-                                      p_rewire = 0.1){                   #shuusei20251205
+                                      k       = 10,                    #shuusei20251205
+                                      alpha   = 0.05,                  #shuusei20251205
+                                      p_rewire = 0.1){                 #shuusei20251205
   n <- length(agents)                                                   #shuusei20251205
   if (n <= 1L) return(agents)                                           #shuusei20251205
   
@@ -512,8 +519,11 @@ assign_smallworld_network <- function(agents,
       d <- abs(incomes[i] - incomes[cand_idx])                          #shuusei20251205
       w <- exp(-d / tau_r)                                              #shuusei20251205
       
+      sw_debug$total_calls <<- sw_debug$total_calls + 1L                #shuusei20251206
+      
       # w が全部 NA / 0 なら一様分布にする                              #shuusei20251206
       if (!any(is.finite(w)) || sum(w, na.rm = TRUE) <= 0) {            #shuusei20251206
+        sw_debug$fallback_stage1 <<- sw_debug$fallback_stage1 + 1L      #shuusei20251206
         w <- rep(1, length(cand_idx))                                   #shuusei20251206
       }                                                                 #shuusei20251206
       
@@ -522,21 +532,18 @@ assign_smallworld_network <- function(agents,
       if (n_add <= 0L) next                                             #shuusei20251205
       n_add <- min(n_add, length(cand_idx))                             #shuusei20251205
       
-      # sample() に渡す前の最終チェック + 保険として tryCatch           #shuusei20251206
+      ## sample() に渡す前の最終チェック                                 #shuusei20251206
       w <- as.numeric(w)                                                #shuusei20251206
-      sel <- tryCatch({                                                 #shuusei20251206
-        if (length(w) == length(cand_idx) &&                            #shuusei20251206
-            all(is.finite(w)) &&                                        #shuusei20251206
-            sum(w) > 0) {                                               #shuusei20251206
-          w <- w / sum(w)                                               #shuusei20251206
-          sample(cand_idx, size = n_add, replace = FALSE, prob = w)     #shuusei20251206
-        } else {                                                        #shuusei20251206
-          sample(cand_idx, size = n_add, replace = FALSE)               #shuusei20251206
-        }                                                               #shuusei20251206
-      }, error = function(e) {                                          #shuusei20251206
-        # もし何かあっても、最終的には一様サンプルにフォールバック    #shuusei20251206
-        sample(cand_idx, size = n_add, replace = FALSE)                 #shuusei20251206
-      })                                                                #shuusei20251206
+      if (length(w) != length(cand_idx) ||                              #shuusei20251206
+          any(!is.finite(w)) ||                                         #shuusei20251206
+          sum(w) <= 0) {                                                #shuusei20251206
+        sw_debug$fallback_stage2 <<- sw_debug$fallback_stage2 + 1L      #shuusei20251206
+        # 何かおかしければ確率なし（＝一様）でサンプル                   #shuusei20251206
+        sel <- sample(cand_idx, size = n_add, replace = FALSE)          #shuusei20251206
+      } else {                                                          #shuusei20251206
+        w <- w / sum(w)                                                 #shuusei20251206
+        sel <- sample(cand_idx, size = n_add, replace = FALSE, prob = w)#shuusei20251206
+      }                                                                 #shuusei20251206
       
       for (j in sel){                                                   #shuusei20251205
         if (i == j) next                                                #shuusei20251205
