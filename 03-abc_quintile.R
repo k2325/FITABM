@@ -1,4 +1,4 @@
-## 03-abc_quintile.R : FiTABM の ABC 再校正（不平等を含む）          #shuusei20251121
+##以下、03-abc_quintile.R : FiTABM の ABC 再校正（不平等を含む）          #shuusei20251121
 
 library(tidyverse)                                                      #shuusei20251121
 library(lubridate)                                                      #shuusei20251121
@@ -66,26 +66,35 @@ simulate_summary <- function(w, t, n_agents = n_agents_abc) {           #shuusei
 
 ## 4. ABC 設定（ガウス事前分布）                                      #shuusei20251122
 set.seed(123)                                                           #shuusei20251122
-n_sim <-500                                                         #shuusei20251122  # 本番 ABC で回す本数
+n_sim <-300                                                         #shuusei20251122  # 本番 ABC で回す本数
 
 ## エージェント数の設定（予備スキャン / 本番ABC）                     #shuusei20251118
-n_agents_scan <- 500                                                  #shuusei20251118  # 予備スキャン用（軽め）  
-n_agents_abc  <- 500                                                  #shuusei20251118  # 本番ABC用（やや重め）
+n_agents_scan <- 300                                                  #shuusei20251118  # 予備スキャン用（軽め）  
+n_agents_abc  <- 300                                                  #shuusei20251118  # 本番ABC用（やや重め）
 
 ## 4-1. 事前分布の中心を探すための「予備スキャン」                     #shuusei20251122
 use_auto_prior   <- TRUE                                                #shuusei20251122  # TRUE: 一様分布から自動で prior の平均を作る
-n_scan           <- 500                                                 #shuusei20251122  # 予備スキャンで回す本数
-top_k_for_prior  <- 5                                                  #shuusei20251122  # 距離が小さい上位何本から prior 平均を作るか
+n_scan           <- 300                                                 #shuusei20251122  # 予備スキャンで回す本数
+top_k_for_prior  <- 3                                                  #shuusei20251122  # 距離が小さい上位何本から prior 平均を作るか
 
-if (use_auto_prior) {                                                   #shuusei20251122
+if (use_auto_prior) {                                                   #shuusei20251206
   
-  ## 4-1-0. 予備スキャン用クラスタの作成                               #shuusei20251122
-  cl_scan <- makeCluster(max(1, detectCores() - 1))                     #shuusei20251122
-  clusterExport(cl_scan, varlist = ls())                                #shuusei20251122
-  clusterEvalQ(cl_scan, {                                               #shuusei20251122
-    load_libraries()                                                    #shuusei20251122
-  })                                                                    #shuusei20251122
-  clusterSetRNGStream(cl_scan, 456)                                     #shuusei20251122
+  ## 4-1-0. 予備スキャン用クラスタの作成                               #shuusei20251206
+  cl_scan <- makeCluster(max(1, detectCores() - 1))                     #shuusei20251206
+  clusterEvalQ(cl_scan, {                                               #shuusei20251206
+    source("01-required_functions.R")                                   #shuusei20251206
+    source("02-run_functions.R")                                        #shuusei20251206
+    load_libraries()                                                    #shuusei20251206
+    load_data()                                                         #shuusei20251206
+  })                                                                    #shuusei20251206
+  
+  ## ワーカーに必要なものだけ渡す                                      #shuusei20251206
+  clusterExport(cl_scan,                                                #shuusei20251206
+                varlist = c("simulate_summary",                         #shuusei20251206
+                            "target_cap_Q",                             #shuusei20251206
+                            "n_agents_scan"))                           #shuusei20251206
+  
+  clusterSetRNGStream(cl_scan, 456)                                     #shuusei20251206
   
   ## 4-1-1. pblapply で n_scan 本を並列に予備スキャン                   #shuusei20251122
   scan_list <- pblapply(1:n_scan, cl = cl_scan, FUN = function(i) {     #shuusei20251122
@@ -200,25 +209,31 @@ print(prior_mean)                                                      #shuusei2
 cat("[ABC] prior_sd:\n")                                               #shuusei20251118
 print(prior_sd)                                                        #shuusei20251118
 
-## 5. 事前からサンプリングしてシミュレーション（並列版）             #shuusei20251121
-cl <- makeCluster(max(1, detectCores() - 1))                            #shuusei20251121
+## 5. 事前からサンプリングしてシミュレーション（並列版）             #shuusei20251206
+cl <- makeCluster(max(1, detectCores() - 1))                            #shuusei20251206
 
-## まずグローバル環境の関数・オブジェクトをワーカーに送る            #shuusei20251121
-clusterExport(cl, varlist = ls())                                       #shuusei20251121
+clusterEvalQ(cl, {                                                      #shuusei20251206
+  source("01-required_functions.R")                                     #shuusei20251206
+  source("02-run_functions.R")                                          #shuusei20251206
+  load_libraries()                                                      #shuusei20251206
+  load_data()                                                           #shuusei20251206
+})                                                                      #shuusei20251206
 
-## ワーカー側でも load_libraries() を呼んで同じパッケージをロード    #shuusei20251121
-clusterEvalQ(cl, {                                                      #shuusei20251121
-  load_libraries()                                                      #shuusei20251121
-})                                                                       #shuusei20251121
+## 最低限必要なオブジェクトだけをワーカーに送る                       #shuusei20251206
+clusterExport(cl,                                                       #shuusei20251206
+              varlist = c("simulate_summary",                           #shuusei20251206
+                          "target_cap_Q",                               #shuusei20251206
+                          "n_agents_abc",                               #shuusei20251206
+                          "prior_mean", "prior_sd"))                    #shuusei20251206
 
-## 乱数シード（並列でも再現性を確保）                                #shuusei20251121
-clusterSetRNGStream(cl, 123)                                            #shuusei20251121
+clusterSetRNGStream(cl, 123)                                            #shuusei20251206
 
 ## parLapply → pblapply に変更して、進捗 & 各 run の誤差を表示        #shuusei20251121
 sim_results <- pblapply(1:n_sim, cl = cl, FUN = function(i) {           #shuusei20251121
   ## 5-1. 0〜1 制約 & w_cap>=0 を満たすまで再サンプリング             #shuusei20251121
   repeat {                                                              #shuusei20251121
     draw <- rnorm(4, mean = prior_mean, sd = prior_sd)                  #shuusei20251121
+    ...
     names(draw) <- names(prior_mean)                                    #shuusei20251121
     
     ## 0〜1 の範囲チェック                                            #shuusei20251121

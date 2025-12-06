@@ -1,3 +1,5 @@
+#以下、02-required_functions.R
+
 ##################################################################################
 ################################ Historical (past) ###############################
 ##################################################################################
@@ -184,14 +186,23 @@ run_model <- function(number_of_agents, rn, w, threshold) {
   
   time_steps <- nrow(FiT) # number of months in time series
   
-  agents <- rerun(number_of_agents, 
-                  Household_Agent("N", assign_income(), assign_size(), assign_region()))
+  agents <- rerun(number_of_agents,                                     #shuusei2025120t5
+                  Household_Agent("N",                                  #shuusei20251205
+                                  assign_income("own"),                #shuusei20251205
+                                  "own",                               #shuusei20251205
+                                  assign_region()))                    #shuusei20251205
   
-  n_links <- 10
+  n_links <- 10                                                         #shuusei20251205
   
-  mean_income <- mean(extract(agents, "income"))
-  agents %<>% map(assign_LF) %>% map(assign_elec_cons) %>% map(assign_u_inc, mean_inc = mean_income) %>% 
-    map(assign_soc_network, n_ag = number_of_agents, n_l = n_links)
+  mean_income <- mean(extract(agents, "income"))                        #shuusei20251205
+  agents %<>% map(assign_LF) %>%                                        #shuusei20251205
+    map(assign_elec_cons) %>%                                           #shuusei20251205
+    map(assign_u_inc, mean_inc = mean_income)                           #shuusei20251205
+  
+  agents <- assign_smallworld_network(agents,                           #shuusei20251205
+                                      k = n_links,                      #shuusei20251205
+                                      alpha = 0.05,                     #shuusei20251205
+                                      p_rewire = 0.1)                   #shuusei20251205
   
   
   # 所得デシル（1〜10）を各エージェントに付与                      #shuusei20251118

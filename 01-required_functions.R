@@ -1,4 +1,5 @@
-## Contents
+#以下、01-required_functions.R
+# Contents
 # 1. Historical scenarios & general - functions
 # 2. Future scenarios - functions
 # 3. Miscellaneous
@@ -87,9 +88,17 @@ load_data <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, in
   
   population <- read_csv("Data/population_mid2012.csv", col_names = FALSE, col_types = cols()) %>% arrange(X1)
   
-  region_weights <<- population$X2/sum(population$X2)
+  # 旧: 全人口で region_weights を作っていた行はコメントアウトか退避   #shuusei20251205
+  # region_weights <<- population$X2/sum(population$X2)
   
-  rm(population)
+  if (!exists("tenure_region_counts", inherits = TRUE)) {               #shuusei20251205
+    init_tenure_region_counts()                                         #shuusei20251205
+  }                                                                      #shuusei20251205
+  owner_region_weights <- tenure_region_counts$own /                    #shuusei20251205
+    sum(tenure_region_counts$own)                                       #shuusei20251205
+  region_weights <<- owner_region_weights                                #shuusei20251205
+  
+  rm(population)                                                         #shuusei20251205
   
   #---------------------------------------------------------#
   # PV cost data
@@ -153,6 +162,79 @@ load_libraries <- function(){
   library(magrittr)
 }
 
+#---- Tenure別所得分布 & 所得帯別電力消費のパラメータ -----------------#shuusei20251205
+lognorm_from_mean_median <- function(mean_week, median_week){           #shuusei20251205
+  sigma   <- sqrt(2 * log(mean_week / median_week))                     #shuusei20251205
+  mu_year <- log(median_week * 52)                                      #shuusei20251205
+  list(mu_year = mu_year, sigma = sigma)                                #shuusei20251205
+}                                                                       #shuusei20251205
+
+lognorm_from_mean_median_elec <- function(mean_yr, median_yr){          #shuusei20251205
+  sigma <- sqrt(2 * log(mean_yr / median_yr))                           #shuusei20251205
+  mu    <- log(median_yr)                                               #shuusei20251205
+  list(mu = mu, sigma = sigma)                                          #shuusei20251205
+}                                                                       #shuusei20251205
+
+init_income_elec_params <- function(){                                  #shuusei20251205
+  ## テニュア別所得分布 (EHS 2008, weekly mean/median)                 #shuusei20251205
+  own  <- lognorm_from_mean_median(802, 635)                            #shuusei20251205
+  priv <- lognorm_from_mean_median(627, 482)                            #shuusei20251205
+  soc  <- lognorm_from_mean_median(354, 285)                            #shuusei20251205
+  
+  income_params_tenure <<- list(                                        #shuusei20251205
+    own  = own,                                                         #shuusei20251205
+    priv = priv,                                                        #shuusei20251205
+    soc  = soc                                                          #shuusei20251205
+  )                                                                     #shuusei20251205
+  
+  ## owner‑occupied の所得帯別電力消費 (kWh/yr, NEED)                  #shuusei20251205
+  mean_elec   <- c(3400, 3800, 3900, 4200, 4600,                        #shuusei20251205
+                   4800, 5000, 5300, 6000, 6800)                        #shuusei20251205
+  median_elec <- c(2600, 3000, 3200, 3600, 3900,                        #shuusei20251205
+                   4100, 4300, 4600, 5200, 5600)                        #shuusei20251205
+  
+  lower_inc <- c(0, 15000, 20000, 30000, 40000,                         #shuusei20251205
+                 50000, 60000, 70000, 100000, 150000)                   #shuusei20251205
+  upper_inc <- c(14999, 19999, 29999, 39999, 49999,                     #shuusei20251205
+                 59999, 69999, 99999, 149999, Inf)                      #shuusei20251205
+  
+  mu_vec    <- numeric(10)                                              #shuusei20251205
+  sigma_vec <- numeric(10)                                              #shuusei20251205
+  for (i in 1:10){                                                      #shuusei20251205
+    tmp          <- lognorm_from_mean_median_elec(mean_elec[i],        #shuusei20251205
+                                                  median_elec[i])      #shuusei20251205
+    mu_vec[i]    <- tmp$mu                                             #shuusei20251205
+    sigma_vec[i] <- tmp$sigma                                          #shuusei20251205
+  }                                                                     #shuusei20251205
+  
+  elec_bands_owners <<- data.frame(                                    #shuusei20251205
+    band  = 1:10,                                                       #shuusei20251205
+    lower = lower_inc,                                                  #shuusei20251205
+    upper = upper_inc,                                                  #shuusei20251205
+    mu    = mu_vec,                                                     #shuusei20251205
+    sigma = sigma_vec                                                   #shuusei20251205
+  )                                                                     #shuusei20251205
+}                                                                       #shuusei20251205
+
+init_tenure_region_counts <- function(){                                #shuusei20251205
+  ## QS405UK から手入力したテニュア別地域世帯数                       #shuusei20251205
+  tenure_region_counts <<- data.frame(                                  #shuusei20251205
+    region_name = c("East Midlands","East","London","North East",       #shuusei20251205
+                    "North West","Scotland","South East","South West",  #shuusei20251205
+                    "Wales","West Midlands","Yorkshire and The Humber"),#shuusei20251205
+    code        = LETTERS[1:11],                                       #shuusei20251205
+    own  = c(1287409, 1655621, 1618315, 702693, 1957351,               #shuusei20251205
+             1470986, 2443797, 1544074, 883130, 1504324, 1435200),     #shuusei20251205
+    soc  = c(300423, 380331, 785993, 259506, 550481,                   #shuusei20251205
+             576419, 487473, 301520, 214911, 435170, 402653),          #shuusei20251205
+    priv = c(307772, 387083, 861865, 167736, 501717,                   #shuusei20251205
+             325372, 624193, 419047, 204635, 355415, 386206)           #shuusei20251205
+  )                                                                    #shuusei20251205
+  
+  total_own  <<- sum(tenure_region_counts$own)                          #shuusei20251205
+  total_soc  <<- sum(tenure_region_counts$soc)                          #shuusei20251205
+  total_priv <<- sum(tenure_region_counts$priv)                         #shuusei20251205
+}                                                                       #shuusei20251205
 
 process_inst_data <- function(){
   a <- read_csv("Data/all_inst_1.csv", skip = 2, col_types = cols())
@@ -287,15 +369,18 @@ initialise_vars <- function() {
 
 Household_Agent <- function(a, b, c, d) {
   # a = Y for adopter, N for non-adopter (char)
-  # b = income
-  # c = household size
-  # d = UK region
-  structure(list(factor(a, levels= c("Y", "N")), b, as.integer(c), 
+  # b = income (annual, £)                                            #shuusei20251205
+  # c = tenure: "own","priv","soc"                                    #shuusei20251205
+  # d = UK region (A–K)                                                #shuusei20251205
+  structure(list(factor(a, levels= c("Y", "N")), 
+                 b, 
+                 factor(c, levels = c("own","priv","soc")),            #shuusei20251205
                  factor(d, levels= c(LETTERS[1:11])), 
                  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 
                  NULL),  
             class = "Household", 
-            names = c("status", "income", "size", "region", "LF", "consumption", 
+            names = c("status", "income", "tenure", "region",          #shuusei20251205
+                      "LF", "consumption", 
                       "inst_cap", "network", "u_inc", "u_ec", "u_soc", "u_cap", "u_tot", "FiT", "exp_tar", "date"))
 }
 
@@ -342,21 +427,156 @@ compute_meet_demand_ref_by_decile <- function(agents) {                 #shuusei
   invisible(ref_vec)                                                    #shuusei20251129
 }                                                                       #shuusei20251129
 
-assign_income <- function() {
-  rlnorm(1, 10.06654, 0.574439)
+assign_income <- function(tenure = "own") {                             #shuusei20251205
+  if (!exists("income_params_tenure", inherits = TRUE)) {               #shuusei20251205
+    init_income_elec_params()                                           #shuusei20251205
+  }                                                                     #shuusei20251205
+  pars <- income_params_tenure[[tenure]]                                #shuusei20251205
+  rlnorm(1, pars$mu_year, pars$sigma)                                   #shuusei20251205
 }
 
-assign_size <- function() {
-  sample(1:5, size = 1, prob = c(0.29, 0.35, 0.16, 0.13, 0.07))
-}
-
-assign_region <- function() {
-  sample(LETTERS[1:11], size = 1, prob = region_weights)
-}
+assign_region <- function() {                                             #shuusei20251206
+  # グローバル環境から region_weights を取り出す                        #shuusei20251206
+  rw <- get("region_weights", envir = .GlobalEnv)                         #shuusei20251206
+  rw <- as.numeric(rw)                                                   #shuusei20251206
+  
+  # 壊れていないかチェック（長さ・有限値）                              #shuusei20251206
+  if (length(rw) != 11L || any(!is.finite(rw))) {                        #shuusei20251206
+    stop("region_weights が壊れています: length = ", length(rw))         #shuusei20251206
+  }                                                                       #shuusei20251206
+  
+  # 念のため合計 1 に正規化してから使う                                  #shuusei20251206
+  s <- sum(rw)                                                            #shuusei20251206
+  if (!is.finite(s) || s <= 0) {                                          #shuusei20251206
+    stop("region_weights の合計が 0 か NA です")                         #shuusei20251206
+  }                                                                       #shuusei20251206
+  rw <- rw / s                                                            #shuusei20251206
+  
+  sample(LETTERS[1:11], size = 1, prob = rw)                             #shuusei20251206
+}                                                                         #shuusei20251206
 
 assign_soc_network <- function(A, n_ag, n_l) {
   A$network <- sample(1:n_ag, n_l)
   return(A)
+}
+
+# 所得×地域に依存した small‑world ネットワークを構成                #shuusei20251205
+assign_smallworld_network <- function(agents,
+                                      k       = 10,                      #shuusei20251205
+                                      alpha   = 0.05,                    #shuusei20251205
+                                      p_rewire = 0.1){                   #shuusei20251205
+  n <- length(agents)                                                   #shuusei20251205
+  if (n <= 1L) return(agents)                                           #shuusei20251205
+  
+  incomes <- extract(agents, "income")                                  #shuusei20251205
+  regions <- extract(agents, "region")                                  #shuusei20251205
+  
+  neighbours <- vector("list", n)                                       #shuusei20251205
+  
+  regs <- unique(regions)                                               #shuusei20251205
+  for (r in regs){                                                      #shuusei20251205
+    idx_r <- which(regions == r)                                        #shuusei20251205
+    N_r   <- length(idx_r)                                              #shuusei20251205
+    if (N_r <= 1L) next                                                 #shuusei20251205
+    
+    inc_r <- incomes[idx_r]                                             #shuusei20251205
+    ord_local <- order(inc_r, na.last = NA)                             #shuusei20251205
+    ord      <- idx_r[ord_local]                                       #shuusei20251205
+    N_eff    <- length(ord)                                             #shuusei20251205
+    if (N_eff <= 1L) next                                               #shuusei20251205
+    
+    y_r   <- incomes[ord]                                               #shuusei20251205
+    med_y <- median(y_r, na.rm = TRUE)                                  #shuusei20251205
+    diffs <- abs(y_r - med_y)                                           #shuusei20251205
+    tau_r <- median(diffs, na.rm = TRUE)                                #shuusei20251205
+    if (is.na(tau_r) || tau_r <= 0) {                                   #shuusei20251205
+      tau_r <- sd(y_r, na.rm = TRUE)                                    #shuusei20251205
+      if (is.na(tau_r) || tau_r <= 0) tau_r <- 1                        #shuusei20251205
+    }                                                                   #shuusei20251205
+    
+    width <- max(1L, ceiling(alpha * N_eff))                            #shuusei20251205
+    
+    for (pos in seq_len(N_eff)){                                        #shuusei20251205
+      i <- ord[pos]                                                     #shuusei20251205
+      pos_min <- max(1L, pos - width)                                   #shuusei20251205
+      pos_max <- min(N_eff, pos + width)                                #shuusei20251205
+      cand_pos <- setdiff(pos_min:pos_max, pos)                         #shuusei20251205
+      if (length(cand_pos) == 0L) next                                  #shuusei20251205
+      cand_idx <- ord[cand_pos]                                         #shuusei20251205
+      
+      d <- abs(incomes[i] - incomes[cand_idx])                          #shuusei20251205
+      w <- exp(-d / tau_r)                                              #shuusei20251205
+      
+      # w が全部 NA / 0 なら一様分布にする                              #shuusei20251206
+      if (!any(is.finite(w)) || sum(w, na.rm = TRUE) <= 0) {            #shuusei20251206
+        w <- rep(1, length(cand_idx))                                   #shuusei20251206
+      }                                                                 #shuusei20251206
+      
+      deg_i <- length(neighbours[[i]])                                  #shuusei20251205
+      n_add <- max(0L, k - deg_i)                                       #shuusei20251205
+      if (n_add <= 0L) next                                             #shuusei20251205
+      n_add <- min(n_add, length(cand_idx))                             #shuusei20251205
+      
+      ## sample() に渡す前の最終チェック                                 #shuusei20251206
+      w <- as.numeric(w)                                                #shuusei20251206
+      if (length(w) != length(cand_idx) ||                               #shuusei20251206
+          any(!is.finite(w)) ||                                         #shuusei20251206
+          sum(w) <= 0) {                                                #shuusei20251206
+        # 何かおかしければ確率なし（＝一様）でサンプル                   #shuusei20251206
+        sel <- sample(cand_idx, size = n_add, replace = FALSE)          #shuusei20251206
+      } else {                                                          #shuusei20251206
+        w <- w / sum(w)                                                 #shuusei20251206
+        sel <- sample(cand_idx, size = n_add, replace = FALSE, prob = w) #shuusei20251206
+      }                                                                 #shuusei20251206
+      
+      for (j in sel){                                                   #shuusei20251205
+        if (i == j) next                                                #shuusei20251205
+        if (is.null(neighbours[[i]])) neighbours[[i]] <- integer(0)     #shuusei20251205
+        if (is.null(neighbours[[j]])) neighbours[[j]] <- integer(0)     #shuusei20251205
+        if (!(j %in% neighbours[[i]])) neighbours[[i]] <- c(neighbours[[i]], j) #shuusei20251205
+        if (!(i %in% neighbours[[j]])) neighbours[[j]] <- c(neighbours[[j]], i) #shuusei20251205
+      }                                                                 #shuusei20251205
+    }                                                                   #shuusei20251205
+  }
+  
+  ## Watts–Strogatz 型のランダム再配線                                 #shuusei20251205
+  if (p_rewire > 0){                                                    #shuusei20251205
+    edges <- list()                                                     #shuusei20251205
+    for (i in seq_len(n)){                                              #shuusei20251205
+      if (length(neighbours[[i]]) == 0) next                            #shuusei20251205
+      for (j in neighbours[[i]]){                                       #shuusei20251205
+        if (i < j) edges[[length(edges) + 1L]] <- c(i, j)               #shuusei20251205
+      }                                                                 #shuusei20251205
+    }                                                                   #shuusei20251205
+    if (length(edges) > 0){                                             #shuusei20251205
+      edges_mat <- do.call(rbind, edges)                                #shuusei20251205
+      n_edges   <- nrow(edges_mat)                                      #shuusei20251205
+      for (e_idx in seq_len(n_edges)){                                  #shuusei20251205
+        i <- edges_mat[e_idx, 1]                                        #shuusei20251205
+        j <- edges_mat[e_idx, 2]                                        #shuusei20251205
+        if (runif(1) < p_rewire){                                       #shuusei20251205
+          neighbours[[i]] <- setdiff(neighbours[[i]], j)                #shuusei20251205
+          neighbours[[j]] <- setdiff(neighbours[[j]], i)                #shuusei20251205
+          if (n > 2){                                                   #shuusei20251205
+            repeat{                                                     #shuusei20251205
+              new_j <- sample.int(n, 1)                                 #shuusei20251205
+              if (new_j != i && !(new_j %in% neighbours[[i]])) break    #shuusei20251205
+            }                                                           #shuusei20251205
+            if (is.null(neighbours[[new_j]])) neighbours[[new_j]] <- integer(0) #shuusei20251205
+            neighbours[[i]]      <- c(neighbours[[i]], new_j)           #shuusei20251205
+            neighbours[[new_j]]  <- c(neighbours[[new_j]], i)           #shuusei20251205
+          }                                                             #shuusei20251205
+        }                                                               #shuusei20251205
+      }                                                                 #shuusei20251205
+    }                                                                   #shuusei20251205
+  }                                                                     #shuusei20251205
+  
+  for (i in seq_len(n)){                                                #shuusei20251205
+    if (is.null(neighbours[[i]])) neighbours[[i]] <- integer(0)         #shuusei20251205
+    agents[[i]]$network <- neighbours[[i]]                              #shuusei20251205
+  }                                                                     #shuusei20251205
+  
+  agents                                                                #shuusei20251205
 }
 
 assign_LF <- function(A) {
@@ -364,18 +584,31 @@ assign_LF <- function(A) {
   return(A)
 }
 
-assign_elec_cons <- function(A) {
-  if (A$income < 150000) {
-    index <- min(which(A$income < income_thresh)) - 1
-    mu <- mus[index, A$size]
-    sigma <- sigmas[index, A$size]
-  } else {
-    mu <- mus[10, A$size]
-    sigma <- sigmas[10, A$size]
-  }
-  A$consumption <- rlnorm(1, mu, sigma)
-  return(A)
+assign_elec_cons <- function(A) {                                       #shuusei20251205
+  if (!exists("elec_bands_owners", inherits = TRUE)) {                  #shuusei20251205
+    init_income_elec_params()                                           #shuusei20251205
+  }                                                                     #shuusei20251205
   
+  # renter は静的母集団とする: 消費量は NA のまま                      #shuusei20251205
+  if (!is.null(A$tenure) && !is.na(A$tenure) && A$tenure != "own") {    #shuusei20251205
+    A$consumption <- NA_real_                                           #shuusei20251205
+    return(A)                                                           #shuusei20251205
+  }                                                                     #shuusei20251205
+  
+  y <- A$income                                                         #shuusei20251205
+  if (is.na(y)) {                                                       #shuusei20251205
+    A$consumption <- NA_real_                                           #shuusei20251205
+    return(A)                                                           #shuusei20251205
+  }                                                                     #shuusei20251205
+  
+  idx <- which(y >= elec_bands_owners$lower &                           #shuusei20251205
+                 y <= elec_bands_owners$upper)[1]                       #shuusei20251205
+  if (is.na(idx)) idx <- nrow(elec_bands_owners)                        #shuusei20251205
+  
+  mu    <- elec_bands_owners$mu[idx]                                    #shuusei20251205
+  sigma <- elec_bands_owners$sigma[idx]                                 #shuusei20251205
+  A$consumption <- rlnorm(1, mu, sigma)                                 #shuusei20251205
+  return(A)                                                             #shuusei20251205
 }
 
 #tyousei
@@ -1396,9 +1629,17 @@ load_data_f <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, 
   
   population <- read_csv("Data/population_mid2012.csv", col_names = FALSE, col_types = cols()) %>% arrange(X1)
   
-  region_weights <<- population$X2/sum(population$X2)
+  # 旧: 全人口で region_weights を作っていた行はコメントアウトか退避   #shuusei20251205
+  # region_weights <<- population$X2/sum(population$X2)
   
-  rm(population)
+  if (!exists("tenure_region_counts", inherits = TRUE)) {               #shuusei20251205
+    init_tenure_region_counts()                                         #shuusei20251205
+  }                                                                      #shuusei20251205
+  owner_region_weights <- tenure_region_counts$own /                    #shuusei20251205
+    sum(tenure_region_counts$own)                                       #shuusei20251205
+  region_weights <<- owner_region_weights                                #shuusei20251205
+  
+  rm(population)                                                         #shuusei20251205
   
   #---------------------------------------------------------#
   # PV cost data
@@ -1610,14 +1851,24 @@ run_model_gen <- function(number_of_agents, rn, w, threshold, n_in, dev, agent_n
   
   time_steps <- nrow(FiT) # number of months in time series
   
-  agents <- rerun(number_of_agents, 
-                  Household_Agent("N", assign_income(), assign_size(), assign_region()))
+  agents <- rerun(number_of_agents,                                     #shuusei2025120a5
+                  Household_Agent("N",                                  #shuusei20251205
+                                  assign_income("own"),                #shuusei20251205
+                                  "own",                               #shuusei20251205
+                                  assign_region()))                    #shuusei20251205
   
-  n_links <- 10
+  n_links <- 10                                                         #shuusei20251205
   
-  mean_income <- mean(extract(agents, "income"))
-  agents %<>% map(assign_LF) %>% map(assign_elec_cons) %>% map(assign_u_inc, mean_inc = mean_income) %>% 
-    map(assign_soc_network, n_ag = number_of_agents, n_l = n_links)
+  mean_income <- mean(extract(agents, "income"))                        #shuusei20251205
+  agents %<>% map(assign_LF) %>%                                        #shuusei20251205
+    map(assign_elec_cons) %>%                                           #shuusei20251205
+    map(assign_u_inc, mean_inc = mean_income)                           #shuusei2025120
+  
+  # 所得×地域ベースの small‑world ネットワークを構築                    #shuusei20251205
+  agents <- assign_smallworld_network(agents,                           #shuusei20251205
+                                      k = n_links,                      #shuusei20251205
+                                      alpha = 0.05,                     #shuusei20251205
+                                      p_rewire = 0.1)                   #shuusei20251205
   
   
   # Create agents: all non-adopters, assign income, size and region randomly weighted by real data

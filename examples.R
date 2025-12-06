@@ -1,3 +1,4 @@
+#以下、examples.R
 #run_model / summarise_results の修正を入れる（A, B の変更）。
 
 #03-abc_quintile.R を R から source("03-abc_quintile.R") などで実行。
@@ -26,21 +27,16 @@
 # is designed to mimic what actually happened in the Great Britain 2010-2016.)
 # This is the default for the data loading function:
 rm(list = ls()); gc()
-source("03-abc_quintile.R")
-
-
-
-
 source('01-required_functions.R')
 source('02-run_functions.R')
-
 load_data()
+source("03-abc_quintile.R")
 
 # To run the simulation:
 
 ## 1 行目・2 行目…と「順番に」使う
-results_seq <- batch_run_func(number_of_runs    = 5,
-                              number_of_agents  = 500,
+results_seq <- batch_run_func(number_of_runs    = 3,
+                              number_of_agents  = 300,
                               use_random_params = FALSE,
                               save_name = "test")
 
@@ -246,4 +242,7 @@ ggplot() +
   ylab("kW") +
   ggtitle("Income (quintile-specific share) budget vs meet_demand") +
   theme_bw()
+
+
+##################メモ
 
