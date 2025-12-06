@@ -493,7 +493,7 @@ assign_smallworld_network <- function(agents,
     
     inc_r <- incomes[idx_r]                                             #shuusei20251205
     ord_local <- order(inc_r, na.last = NA)                             #shuusei20251205
-    ord      <- idx_r[ord_local]                                       #shuusei20251205
+    ord      <- idx_r[ord_local]                                        #shuusei20251205
     N_eff    <- length(ord)                                             #shuusei20251205
     if (N_eff <= 1L) next                                               #shuusei20251205
     
@@ -532,17 +532,22 @@ assign_smallworld_network <- function(agents,
       if (n_add <= 0L) next                                             #shuusei20251205
       n_add <- min(n_add, length(cand_idx))                             #shuusei20251205
       
-      ## sample() に渡す前の最終チェック                                 #shuusei20251206
-      w <- as.numeric(w)                                                #shuusei20251206
-      if (length(w) != length(cand_idx) ||                              #shuusei20251206
-          any(!is.finite(w)) ||                                         #shuusei20251206
-          sum(w) <= 0) {                                                #shuusei20251206
-        sw_debug$fallback_stage2 <<- sw_debug$fallback_stage2 + 1L      #shuusei20251206
-        # 何かおかしければ確率なし（＝一様）でサンプル                   #shuusei20251206
-        sel <- sample(cand_idx, size = n_add, replace = FALSE)          #shuusei20251206
+      ## ★候補が 1 つだけのときは sample() を使わない                     #shuusei20251206
+      if (length(cand_idx) == 1L) {                                     #shuusei20251206
+        sel <- cand_idx                                                 #shuusei20251206
       } else {                                                          #shuusei20251206
-        w <- w / sum(w)                                                 #shuusei20251206
-        sel <- sample(cand_idx, size = n_add, replace = FALSE, prob = w)#shuusei20251206
+        ## sample() に渡す前の最終チェック                                 #shuusei20251206
+        w <- as.numeric(w)                                              #shuusei20251206
+        if (length(w) != length(cand_idx) ||                            #shuusei20251206
+            any(!is.finite(w)) ||                                       #shuusei20251206
+            sum(w) <= 0) {                                              #shuusei20251206
+          sw_debug$fallback_stage2 <<- sw_debug$fallback_stage2 + 1L    #shuusei20251206
+          # 何かおかしければ確率なし（＝一様）でサンプル                  #shuusei20251206
+          sel <- sample(cand_idx, size = n_add, replace = FALSE)        #shuusei20251206
+        } else {                                                        #shuusei20251206
+          w <- w / sum(w)                                               #shuusei20251206
+          sel <- sample(cand_idx, size = n_add, replace = FALSE, prob = w) #shuusei20251206
+        }                                                               #shuusei20251206
       }                                                                 #shuusei20251206
       
       for (j in sel){                                                   #shuusei20251205
@@ -555,7 +560,7 @@ assign_smallworld_network <- function(agents,
     }                                                                   #shuusei20251205
   }
   
-  ## Watts–Strogatz 型のランダム再配線                                 #shuusei20251205
+  ## Watts–Strogatz 型のランダム再配線（ここから下は変更なし）           #shuusei20251205
   if (p_rewire > 0){                                                    #shuusei20251205
     edges <- list()                                                     #shuusei20251205
     for (i in seq_len(n)){                                              #shuusei20251205

@@ -240,6 +240,4 @@ ggplot() +
 
 ##################メモ
 
-sw_debug
-sw_debug$fallback_stage1 / sw_debug$total_calls
-sw_debug$fallback_stage2 / sw_debug$total_calls
+
