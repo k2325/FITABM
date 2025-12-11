@@ -48,9 +48,10 @@ load_data <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, in
   if(init_fit < 0 | final_fit <0) stop("FiTs have to be positive")
   
   
-  elec_price_time <<- read_csv("Data/electricityprices.csv", col_names = F, col_types = cols())
-  elec_price_time[7, 1] <<- 2016    # projection year 2016 #shuusei20251116
-  elec_price_time[7, 2] <<- 17.33   # projection price 2016 #shuusei20251116
+  elec_price_time <<- read_csv("Data/electricityprices.csv",          #shuusei20251211
+                               col_names = F, col_types = cols())     #shuusei20251211
+  ## electricityprices.csv は 2010–2023 年の実測 年平均単価 (p/kWh) を持つ前提。  #shuusei20251211
+  ## 歴史シナリオでは、その年の値を年内の全ての月で共通して使う。               #shuusei20251211
   
   owner_occupiers <<- read_csv("Data/owner_occupiers.csv", col_names = F, col_types = cols()) %>% mutate(X2 = X2*1000)
   
@@ -163,11 +164,12 @@ load_libraries <- function(){
 }
 
 #---- Tenure別所得分布 & 所得帯別電力消費のパラメータ -----------------#shuusei20251205
-lognorm_from_mean_median <- function(mean_week, median_week){           #shuusei20251205
-  sigma   <- sqrt(2 * log(mean_week / median_week))                     #shuusei20251205
-  mu_year <- log(median_week * 52)                                      #shuusei20251205
-  list(mu_year = mu_year, sigma = sigma)                                #shuusei20251205
-}                                                                       #shuusei20251205
+lognorm_from_mean_median <- function(mean_year, median_year){           #shuusei20251211
+  ## mean_year, median_year : 年間所得 (£/year)                         #shuusei20251211
+  sigma   <- sqrt(2 * log(mean_year / median_year))                     #shuusei20251211
+  mu_year <- log(median_year)                                           #shuusei20251211
+  list(mu_year = mu_year, sigma = sigma)                                #shuusei20251211
+}                                                                       #shuusei20251211
 
 lognorm_from_mean_median_elec <- function(mean_yr, median_yr){          #shuusei20251205
   sigma <- sqrt(2 * log(mean_yr / median_yr))                           #shuusei20251205
@@ -175,17 +177,20 @@ lognorm_from_mean_median_elec <- function(mean_yr, median_yr){          #shuusei
   list(mu = mu, sigma = sigma)                                          #shuusei20251205
 }                                                                       #shuusei20251205
 
-init_income_elec_params <- function(){                                  #shuusei20251205
-  ## テニュア別所得分布 (EHS 2008, weekly mean/median)                 #shuusei20251205
-  own  <- lognorm_from_mean_median(802, 635)                            #shuusei20251205
-  priv <- lognorm_from_mean_median(627, 482)                            #shuusei20251205
-  soc  <- lognorm_from_mean_median(354, 285)                            #shuusei20251205
+init_income_elec_params <- function(){                                  #shuusei20251211
+  ## テニュア別所得分布 (EHS 2011‑12, 年間 mean/median, £/year)        #shuusei20251211
+  ## Owner occupiers: mean = 40504, median = 31216                      #shuusei20251211
+  ## Social renters : mean = 17550, median = 15287                      #shuusei20251211
+  ## Private renters: mean = 30146, median = 23400                      #shuusei20251211
+  own  <- lognorm_from_mean_median(40504, 31216)                        #shuusei20251211
+  priv <- lognorm_from_mean_median(30146, 23400)                        #shuusei20251211
+  soc  <- lognorm_from_mean_median(17550, 15287)                        #shuusei20251211
   
-  income_params_tenure <<- list(                                        #shuusei20251205
-    own  = own,                                                         #shuusei20251205
-    priv = priv,                                                        #shuusei20251205
-    soc  = soc                                                          #shuusei20251205
-  )                                                                     #shuusei20251205
+  income_params_tenure <<- list(                                        #shuusei20251211
+    own  = own,                                                         #shuusei20251211
+    priv = priv,                                                        #shuusei20251211
+    soc  = soc                                                          #shuusei20251211
+  )                                                                     #shuusei20251211
   
   ## owner‑occupied の所得帯別電力消費 (kWh/yr, NEED)                  #shuusei20251205
   mean_elec   <- c(3400, 3800, 3900, 4200, 4600,                        #shuusei20251205
@@ -1610,10 +1615,11 @@ load_data_f <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, 
   
   #---------------------------------------------------------#
   
-  elec_price_time <- read_csv("Data/electricityprices.csv", col_names = F, col_types = cols())
-  elec_price_time[7, 1] <- 2016    # projection year 2016 #shuusei20251116
-  elec_price_time[7, 2] <- 17.33   # projection price 2016 #shuusei20251116
-  elec_price_time <<- future_elec_price(elec_price_time, elec_trend)
+  elec_price_time_raw <- read_csv("Data/electricityprices.csv",        #shuusei20251211
+                                  col_names = F, col_types = cols())   #shuusei20251211
+  ## 2010–2023 の実データから、time_years（シミュレーション対象年）だけ切り出す。 #shuusei20251211
+  elec_price_time <<- future_elec_price(elec_price_time_raw,           #shuusei20251211
+                                        elec_trend)                    #shuusei20251211
   
   owner_occupiers <- read_csv("Data/owner_occupiers.csv", col_names = F, col_types = cols()) %>% mutate(X2 = X2*1000)
   
@@ -1739,33 +1745,53 @@ future_PV_price <- function(init_PV, x, start_date, end_date) {
 }
 
 
-future_elec_price <- function(elec_price_time, x){
-  future_price_high <- vector(length = length(time_years))
+future_elec_price <- function(elec_price_time, x){                     #shuusei20251211
+  ## electricityprices.csv: X1 = 年(2010–2023), X2 = 年平均単価(p/kWh)   #shuusei20251211
+  ## time_years: load_data_f() 内で定義された「シミュレーション対象の年」   #shuusei20251211
   
-  a <- lm(elec_price_time$X2[1:6] ~ elec_price_time$X1[1:6])
-  for (i in 1:length(time_years)) {
-    future_price_high[i] <- a$coefficients[[2]]*time_years[i] + a$coefficients[[1]]
-  }
-  future_price_low <- rep(mean(elec_price_time$X2[5:6]), length(time_years))
-  future_price_mid <- (future_price_high+future_price_low)/2
+  elec_price_time <- elec_price_time %>% arrange(X1)                   #shuusei20251211
+  last_actual      <- max(elec_price_time$X1, na.rm = TRUE)            #shuusei20251211
   
-  if (x == "high") {
-    future_price <- future_price_high
-  }
+  ## 1) シミュレーション期間が実データの範囲内（〜last_actual, 想定:2023）なら
+  ##    high/mid/low シナリオは無視して「実データだけ」返す。               #shuusei20251211
+  if (max(time_years) <= last_actual) {                                #shuusei20251211
+    elec_sub <- elec_price_time %>%                                    #shuusei20251211
+      filter(X1 %in% time_years)                                       #shuusei20251211
+    elec_sub <- elec_sub[match(time_years, elec_sub$X1), ]             #shuusei20251211
+    return(elec_sub)                                                   #shuusei20251211
+  }                                                                    #shuusei20251211
   
-  else if (x == "mid") {
-    future_price <- future_price_mid
-  }
+  ## 2) もし end_date を 2023 年より先に延ばした場合だけ、
+  ##    実データを基に従来通りの linear high/low/mid シナリオを使う。      #shuusei20251211
   
-  else if (x == "low") {
-    future_price <- future_price_low
-    
-  }
-  elec_price <- data.frame(X1 = time_years, X2 = future_price)
-  elec_price$X2[elec_price$X1 == 2016] <- elec_price_time$X2[elec_price_time$X1 == 2016]
-  return(elec_price)
+  # 全実データで単回帰直線をフィット                                   #shuusei20251211
+  fit_lm <- lm(X2 ~ X1, data = elec_price_time)                        #shuusei20251211
   
-}
+  future_price_high <- predict(fit_lm,                                 #shuusei20251211
+                               newdata = data.frame(X1 = time_years))  #shuusei20251211
+  
+  last_two <- tail(elec_price_time$X2, 2)                              #shuusei20251211
+  future_price_low <- rep(mean(last_two), length(time_years))          #shuusei20251211
+  future_price_mid <- (future_price_high + future_price_low)/2         #shuusei20251211
+  
+  if (x == "high") {                                                   #shuusei20251211
+    future_price <- future_price_high                                  #shuusei20251211
+  } else if (x == "low") {                                             #shuusei20251211
+    future_price <- future_price_low                                   #shuusei20251211
+  } else {  # "mid" かその他                                           #shuusei20251211
+    future_price <- future_price_mid                                   #shuusei20251211
+  }                                                                    #shuusei20251211
+  
+  elec_price <- data.frame(X1 = time_years, X2 = future_price)         #shuusei20251211
+  
+  ## 実データが存在する年（〜last_actual）は必ず実測値で上書きする。        #shuusei20251211
+  idx_actual <- match(elec_price_time$X1, elec_price$X1)               #shuusei20251211
+  valid_idx  <- which(!is.na(idx_actual))                              #shuusei20251211
+  elec_price$X2[idx_actual[valid_idx]] <-                              #shuusei20251211
+    elec_price_time$X2[valid_idx]                                      #shuusei20251211
+  
+  return(elec_price)                                                   #shuusei20251211
+}                                                                      #shuusei20251211
 
 
 set_FiT_f <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, init_fit, final_fit, exp_tar){
