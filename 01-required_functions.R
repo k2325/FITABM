@@ -2007,7 +2007,6 @@ run_model_gen <- function(number_of_agents, rn, w, threshold, n_in, dev, agent_n
       map(decide, threshold = threshold)
     
     adopters <- agents[map_chr(agents, "status") == "Y"]                 #shuusei20251212
-    adopters <- agents[map(agents, "status") == 1]
     
     
     # Write data

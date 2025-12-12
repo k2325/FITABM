@@ -842,9 +842,13 @@ run_model_f <- function(agent_name, rn, w, threshold) {
     marginal_current<<- kW_price$X3[i]   # £/kW                               #shuusei20251212
     # kW_price_current は廃止（使わない）                                     #shuusei20251212
     current_date <<- FiT$time_series[i]
-    elec_index <- which(sapply(elec_price_time$X1, function(x) grep(x, current_date)) == 1)
-    elec_price <<- elec_price_time[[elec_index, 2]]/100
-    n_owners <<- owner_occupiers[[elec_index, 2]]
+    yr_now <- year(current_date)                                            #shuusei20251212
+        elec_index <- match(yr_now, elec_price_time$X1)                          #shuusei20251212
+        if (is.na(elec_index)) stop("No electricity price for year: ", yr_now)  #shuusei20251212
+        elec_price <<- elec_price_time$X2[elec_index]/100                        #shuusei20251212
+        owner_index <- match(yr_now, owner_occupiers$X1)                         #shuusei20251212
+        if (is.na(owner_index)) stop("No owner_occupiers for year: ", yr_now)   #shuusei20251212
+        n_owners <<- owner_occupiers$X2[owner_index]                             #shuusei20251212
     
     
     agents <- agents %>% map(assign_inst_cap) %>% map(utilities, w = w, ags = agents) %>% 
