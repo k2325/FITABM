@@ -103,8 +103,14 @@ load_data <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, in
   
   #---------------------------------------------------------#
   # PV cost data
-  kW_price <<- read_csv('Data/PV_cost_data_est.csv', col_names = FALSE, col_types = cols()) %>% mutate(X1 = dmy(X1)) %>%
-    filter(X1 >= start_date) 
+  kW_price <<- read_csv('Data/PV_cost_data_est.csv', col_names = FALSE, col_types = cols()) %>%
+    mutate(X1 = dmy(X1)) %>%
+    filter(X1 >= start_date)
+  
+  ## X1 = date, X2 = fixed(£/system), X3 = marginal(£/kW)                  #shuusei20251212
+  if (ncol(kW_price) < 3) {                                               #shuusei20251212
+    stop("PV_cost_data_est.csv must have 3 columns: time_series,fixed,marginal") #shuusei20251212
+  }                                                                       #shuusei20251212
   
   
   #---------------------------------------------------------#
@@ -722,8 +728,13 @@ get_budget_share_by_decile <- function(dec) {                           #shuusei
 assign_inst_cap <- function(A) {
   if (A$status == "N") { # otherwise agents who have already adopted can change inst_cap!
     ## 予算ベースの容量（所得クインタイル別シェア）                     #shuusei20251129
-    share_Q <- get_budget_share_by_decile(A$inc_decile)                 #shuusei20251129
-    inst_cap_budget <- share_Q * A$income / kW_price_current            #shuusei20251129
+    share_Q <- get_budget_share_by_decile(A$inc_decile)                      #shuusei20251129
+    
+    budget_total <- share_Q * A$income                                       #shuusei20251212
+    
+    ## 予算 >= fixed + marginal*cap  => cap <= (budget - fixed)/marginal     #shuusei20251212
+    inst_cap_budget <- (budget_total - fixed_current) / marginal_current     #shuusei20251212
+    if (!is.finite(inst_cap_budget) || inst_cap_budget < 0) inst_cap_budget <- 0 #shuusei20251212
     
     ## 需要ベースの容量（診断用 & 正規化用）                            #shuusei20251129
     meet_demand <- A$consumption/(A$LF*24*365)                          #shuusei20251129
@@ -850,8 +861,10 @@ simple_PP <- function(A) {
   
   R <- annual_return(A)
   
-  if (R > 0)  pp <- A$inst_cap*kW_price_current/R
-  else pp <- 20
+  if (R > 0) {                                                            #shuusei20251212
+    capex <- fixed_current + marginal_current * A$inst_cap                #shuusei20251212
+    pp <- capex / R                                                       #shuusei20251212
+  } else pp <- 20                                                         #shuusei20251212
   
   if (pp > 20) pp <- 20
   return(pp)
@@ -924,7 +937,8 @@ soc_utility <- function(A, ags) {
 
 
 cap_utility <- function(A) {                                           #shuusei202511299!
-  u_cap <- 1/(1 + exp(-(0.2 * A$income - A$inst_cap * kW_price_current) * 0.0007))  #shuusei202511299!
+  capex <- fixed_current + marginal_current * A$inst_cap                #shuusei20251212
+  u_cap <- 1/(1 + exp(-(0.2 * A$income - capex) * 0.0007))              #shuusei20251212
   return(u_cap)                                                        #shuusei202511299!
 }                                                                       #shuusei202511299!
 #---------------------------- 1.3 Cost calculation ------------------------------#
@@ -990,9 +1004,10 @@ priv_cost <- function(x, rn, number_of_agents) { # x = adopters
     priv_costs <- data.frame(adopt_date = adopt_dates, 
                              inst_cap = inst_cap)
     
-    priv_costs %<>% mutate(PV_cost = sapply(adopt_date, which_PV_cost), 
-                           tot_cost = inst_cap*PV_cost, 
-                           n_owners = sapply(adopt_date, which_owner_year),
+    priv_costs %<>% mutate(PV_fixed    = sapply(adopt_date, which_PV_fixed),     #shuusei20251212
+                           PV_marginal = sapply(adopt_date, which_PV_marginal),  #shuusei20251212
+                           tot_cost    = PV_fixed + PV_marginal * inst_cap,      #shuusei20251212
+                           n_owners    = sapply(adopt_date, which_owner_year),
                            tot_cost_scaled = tot_cost*n_owners/number_of_agents)
     
     
@@ -1022,7 +1037,8 @@ calc_LCOE <- function(adpts, rn, number_of_agents) {
     adopt_dates <- adpts %>% sapply(function (x) x["date"]) %>% unname
     adopt_dates <- do.call("c", adopt_dates)
     
-    PV_price <- adopt_dates %>% sapply(which_PV_cost)
+    PV_fixed    <- adopt_dates %>% sapply(which_PV_fixed)                   #shuusei20251212
+    PV_marginal <- adopt_dates %>% sapply(which_PV_marginal)                #shuusei20251212
     
     lifetime <- 25 # how long do the solar panels last?
     
@@ -1038,10 +1054,11 @@ calc_LCOE <- function(adpts, rn, number_of_agents) {
                               output = sapply(adpts, function (x) output(x$inst_cap, x$LF)), 
                               FiT = extract(adpts, "FiT"), exp_tar = extract(adpts, "exp_tar"), 
                               guarantee = guarantee,
-                              PV_price = PV_price)
+                              PV_fixed = PV_fixed,                          #shuusei20251212
+                              PV_marginal = PV_marginal)                    #shuusei20251212
     
     adopt_costs %<>% mutate(export = output/2, annual_cost = output*FiT + export*exp_tar,
-                            cap_cost = inst_cap*PV_price)
+                            cap_cost = PV_fixed + PV_marginal * inst_cap)   #shuusei20251212
     
     tot_output <- sum(adopt_costs$output)
     
@@ -1095,10 +1112,19 @@ LCOE <- function(annual_cost, cap_cost, guarantee, output) {
   LCOE <- 1000*cost/prod_elec # pounds per MWh（各インストールごとのベクトル） #shuusei20251116
 }
 
-which_PV_cost <- function(x) {
-  kW_price %>% filter(X1 == x) %>% select(X2) %>% unlist %>% unname
-  
-}
+which_PV_fixed <- function(x) {                                        #shuusei20251212
+  v <- kW_price %>% filter(X1 == x) %>% select(X2) %>% unlist %>% unname #shuusei20251212
+  v[1]                                                                  #shuusei20251212
+}                                                                       #shuusei20251212
+
+which_PV_marginal <- function(x) {                                     #shuusei20251212
+  v <- kW_price %>% filter(X1 == x) %>% select(X3) %>% unlist %>% unname #shuusei20251212
+  v[1]                                                                  #shuusei20251212
+}                                                                       #shuusei20251212
+
+which_PV_cost <- function(x) {                                         #shuusei20251212
+  stop("which_PV_cost() is deprecated. Use which_PV_fixed()/which_PV_marginal() and CAPEX=fixed+marginal*inst_cap.") #shuusei20251212
+}                                                                       #shuusei20251212
 
 which_owner_year <- function(x) {                        #shuusei20251116
   owner_occupiers$X2[owner_occupiers$X1 ==               #shuusei20251116
@@ -1725,23 +1751,32 @@ load_data_f <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, 
 
 future_PV_price <- function(init_PV, x, start_date, end_date) {
   # x is annual percentage reduction
-  # 4, 7, 10 for low, med, high cost reduction cases
   
   no_years <- length(year(start_date):year(end_date)) + 1
-  year_cost <- vector(length = no_years)
-  year_cost[1] <- init_PV %>% filter(X1 == start_date) %>% select(X2) %>% unlist %>% unname
-  for (i in 1:(no_years-1)) {
-    year_cost[i+1] <- year_cost[i] - x*year_cost[i]
-  }
   
-  monthly_cost <- approx(x = 1:no_years, y = year_cost,
-                         method = "linear", n = (no_years-1)*12 + 1)
-  monthly_cost <- data.frame(X1 = seq(start_date, length.out = length(monthly_cost$y), 
-                                      by = '1 month'),
-                             X2 = monthly_cost$y)
+  year_fixed <- vector(length = no_years)                               #shuusei20251212
+  year_marg  <- vector(length = no_years)                               #shuusei20251212
+  
+  year_fixed[1] <- init_PV %>% filter(X1 == start_date) %>% select(X2) %>% unlist %>% unname #shuusei20251212
+  year_marg[1]  <- init_PV %>% filter(X1 == start_date) %>% select(X3) %>% unlist %>% unname #shuusei20251212
+  
+  for (i in 1:(no_years-1)) {                                           #shuusei20251212
+    year_fixed[i+1] <- year_fixed[i] - x*year_fixed[i]                  #shuusei20251212
+    year_marg[i+1]  <- year_marg[i]  - x*year_marg[i]                   #shuusei20251212
+  }                                                                     #shuusei20251212
+  
+  monthly_fixed <- approx(x = 1:no_years, y = year_fixed,
+                          method = "linear", n = (no_years-1)*12 + 1)   #shuusei20251212
+  monthly_marg  <- approx(x = 1:no_years, y = year_marg,
+                          method = "linear", n = (no_years-1)*12 + 1)   #shuusei20251212
+  
+  monthly_cost <- data.frame(
+    X1 = seq(start_date, length.out = length(monthly_fixed$y), by = '1 month'),
+    X2 = monthly_fixed$y,                                               #shuusei20251212
+    X3 = monthly_marg$y                                                 #shuusei20251212
+  )                                                                     #shuusei20251212
   
   monthly_cost %<>% filter(X1 >= start_date, X1 <= end_date)
-  
 }
 
 
@@ -1939,7 +1974,9 @@ run_model_gen <- function(number_of_agents, rn, w, threshold, n_in, dev, agent_n
     FiT_current_small <<- FiT$FiT[[i]]/100 # p to £
     FiT_current_large <<- FiT$FiT_large[[i]]/100
     exp_tar_current <<- FiT$exp_tar[[i]]/100 # p to £
-    kW_price_current <<- kW_price$X2[i]
+    fixed_current   <<- kW_price$X2[i]   # £/system                           #shuusei20251212
+    marginal_current<<- kW_price$X3[i]   # £/kW                               #shuusei20251212
+    # kW_price_current は廃止（使わない）                                     #shuusei20251212
     current_date <<- FiT$time_series[i]
     elec_index <- which(sapply(elec_price_time$X1, function(x) grep(x, current_date)) == 1)
     elec_price <<- elec_price_time[[elec_index, 2]]/100
@@ -2049,8 +2086,9 @@ priv_cost_f <- function(x, rn, number_of_agents) { # x = adopters
     priv_costs <- data.frame(adopt_date = adopt_dates, 
                              inst_cap = inst_cap)
     
-    priv_costs %<>% mutate(PV_cost = sapply(adopt_date, which_PV_cost_f), 
-                           tot_cost = inst_cap*PV_cost, 
+    priv_costs %<>% mutate(PV_fixed    = sapply(adopt_date, which_PV_fixed_f),    #shuusei20251212
+                           PV_marginal = sapply(adopt_date, which_PV_marginal_f), #shuusei20251212
+                           tot_cost    = PV_fixed + PV_marginal * inst_cap,       #shuusei20251212
                            n_owners = sapply(adopt_date, which_owner_year_f),
                            tot_cost_scaled = tot_cost*n_owners/number_of_agents)
     
@@ -2082,7 +2120,8 @@ calc_LCOE_f <- function(adpts, rn, number_of_agents) {
     
     
     
-    PV_price <- adopt_dates %>% sapply(which_PV_cost_f)
+    PV_fixed    <- adopt_dates %>% sapply(which_PV_fixed_f)                 #shuusei20251212
+    PV_marginal <- adopt_dates %>% sapply(which_PV_marginal_f)              #shuusei20251212
     
     lifetime <- 25 # how long do the solar panels last?
     
@@ -2098,10 +2137,11 @@ calc_LCOE_f <- function(adpts, rn, number_of_agents) {
                               output = sapply(adpts, function (x) output(x$inst_cap, x$LF)), 
                               FiT = extract(adpts, "FiT"), exp_tar = extract(adpts, "exp_tar"), 
                               guarantee = guarantee,
-                              PV_price = PV_price)
+                              PV_fixed = PV_fixed,                          #shuusei20251212
+                              PV_marginal = PV_marginal)                    #shuusei20251212
     
     adopt_costs %<>% mutate(export = output/2, annual_cost = output*FiT + export*exp_tar,
-                            cap_cost = inst_cap*PV_price)
+                            cap_cost = PV_fixed + PV_marginal * inst_cap)   #shuusei20251212
     
     tot_output <- sum(adopt_costs$output)
     
@@ -2132,17 +2172,27 @@ calc_LCOE_f <- function(adpts, rn, number_of_agents) {
 
 
 
-which_PV_cost_f <- function(x) {
+which_PV_fixed_f <- function(x) {                                      #shuusei20251212
+  kW_price_h <- read_csv('Data/PV_cost_data_est.csv', col_names = FALSE, col_types = cols()) %>%  #shuusei20251212
+    mutate(X1 = dmy(X1)) %>% filter(X1 < kW_price$X1[1])                #shuusei20251212
   
-  kW_price_h <- read_csv('Data/PV_cost_data_est.csv', col_names = FALSE, col_types = "cd") %>% 
-    mutate(X1 = dmy(X1)) %>% filter(X1 < kW_price$X1[1])
+  kW_price_all <- rbind(kW_price, kW_price_h)                           #shuusei20251212
+  v <- kW_price_all %>% filter(X1 == x) %>% select(X2) %>% unlist %>% unname #shuusei20251212
+  v[1]                                                                  #shuusei20251212
+}                                                                       #shuusei20251212
+
+which_PV_marginal_f <- function(x) {                                   #shuusei20251212
+  kW_price_h <- read_csv('Data/PV_cost_data_est.csv', col_names = FALSE, col_types = cols()) %>%  #shuusei20251212
+    mutate(X1 = dmy(X1)) %>% filter(X1 < kW_price$X1[1])                #shuusei20251212
   
-  kW_price_all <- rbind(kW_price, kW_price_h)
-  PV_cost <- kW_price_all %>% filter(X1 == x) %>% select(X2) %>% unlist %>% unname
-  PV_cost <- PV_cost[1]
-  
-  
-}
+  kW_price_all <- rbind(kW_price, kW_price_h)                           #shuusei20251212
+  v <- kW_price_all %>% filter(X1 == x) %>% select(X3) %>% unlist %>% unname #shuusei20251212
+  v[1]                                                                  #shuusei20251212
+}                                                                       #shuusei20251212
+
+which_PV_cost_f <- function(x) {                                       #shuusei20251212
+  stop("which_PV_cost_f() is deprecated. Use which_PV_fixed_f()/which_PV_marginal_f().") #shuusei20251212
+}                                                                       #shuusei20251212
 which_owner_year_f <- function(x) {
   owner_occupier_h <- read_csv("Data/owner_occupiers.csv", col_names = F, col_types = "in") %>% 
     mutate(X2 = X2*1000)

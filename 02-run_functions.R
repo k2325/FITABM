@@ -346,7 +346,9 @@ run_model <- function(number_of_agents, rn, w, threshold) {
     FiT_current_small <<- FiT$FiT[[i]]/100 # p to £
     FiT_current_large <<- FiT$FiT_large[[i]]/100
     exp_tar_current <<- FiT$exp_tar[[i]]/100 # p to £
-    kW_price_current <<- kW_price$X2[i]
+    fixed_current   <<- kW_price$X2[i]   # £/system                           #shuusei20251212
+    marginal_current<<- kW_price$X3[i]   # £/kW                               #shuusei20251212
+    # kW_price_current は廃止（使わない）                                     #shuusei20251212
     current_date <<- FiT$time_series[i]
     elec_index <- which(sapply(elec_price_time$X1, function(x) grep(x, current_date)) == 1)
     elec_price <<- elec_price_time[[elec_index, 2]]/100
@@ -830,7 +832,9 @@ run_model_f <- function(agent_name, rn, w, threshold) {
     FiT_current_small <<- FiT$FiT[[i]]/100 # p to £
     FiT_current_large <<- FiT$FiT_large[[i]]/100
     exp_tar_current <<- FiT$exp_tar[[i]]/100 # p to £
-    kW_price_current <<- kW_price$X2[i]
+    fixed_current   <<- kW_price$X2[i]   # £/system                           #shuusei20251212
+    marginal_current<<- kW_price$X3[i]   # £/kW                               #shuusei20251212
+    # kW_price_current は廃止（使わない）                                     #shuusei20251212
     current_date <<- FiT$time_series[i]
     elec_index <- which(sapply(elec_price_time$X1, function(x) grep(x, current_date)) == 1)
     elec_price <<- elec_price_time[[elec_index, 2]]/100

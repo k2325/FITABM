@@ -154,26 +154,19 @@ df_md <- export_meet_demand_vs_income(
 ## どの日の PV 価格で「所得×シェア」を見るか（ここでは 2015-10-01）
 d_ref <- dmy("01oct2015")                                              #shuusei20251206
 
-kW_price_ref <- kW_price %>%
-  filter(X1 == d_ref) %>%
-  pull(X2)
+PV_fixed_ref <- kW_price %>% filter(X1 == d_ref) %>% pull(X2)           #shuusei20251212
+PV_marg_ref  <- kW_price %>% filter(X1 == d_ref) %>% pull(X3)           #shuusei20251212
 
-if (length(kW_price_ref) != 1) {
-  stop("基準日の kW_price_ref が一意に決まりません。日付（d_ref）を確認してください。")
-}
+if (length(PV_fixed_ref) != 1 || length(PV_marg_ref) != 1) {            #shuusei20251212
+  stop("基準日の PV_fixed_ref / PV_marg_ref が一意に決まりません。日付（d_ref）を確認してください。") #shuusei20251212
+}                                                                        #shuusei20251212
 
-## クインタイル付与 & inst_cap_budget を計算
 df_q <- df_md %>%
   mutate(
-    # 所得クインタイル（1 = 低所得, 5 = 高所得）
     quintile = ntile(income, 5),
-    
-    # SES_BUDGET_SHARE_Q （01-required_functions.R）をそのまま利用       #shuusei20251206
-    # 例: c(0.30, 0.27, 0.24, 0.21, 0.18) などに変更すれば自動で反映        #shuusei20251206
-    budget_share = SES_BUDGET_SHARE_Q[quintile],                        #shuusei20251206
-    
-    # 所得 ×（クインタイル別シェア）を PV に使った場合の「予算ベース容量」(kW)
-    inst_cap_budget = budget_share * income / kW_price_ref
+    budget_share = SES_BUDGET_SHARE_Q[quintile],
+    budget_total = budget_share * income,                                #shuusei20251212
+    inst_cap_budget = pmax(0, (budget_total - PV_fixed_ref) / PV_marg_ref) #shuusei20251212
   )
 
 ## クインタイル別の平均値（確認用の表）
