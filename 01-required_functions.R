@@ -1112,15 +1112,25 @@ LCOE <- function(annual_cost, cap_cost, guarantee, output) {
   LCOE <- 1000*cost/prod_elec # pounds per MWh（各インストールごとのベクトル） #shuusei20251116
 }
 
-which_PV_fixed <- function(x) {                                        #shuusei20251212
-  v <- kW_price %>% filter(X1 == x) %>% select(X2) %>% unlist %>% unname #shuusei20251212
-  v[1]                                                                  #shuusei20251212
-}                                                                       #shuusei20251212
+which_PV_fixed <- function(x) {                                         #shuusei20251212
+  if (!inherits(x, "Date")) x <- dmy(x)                                  #shuusei20251212
+  row <- kW_price %>%                                                    #shuusei20251212
+    filter(!is.na(X1), X1 <= x) %>%                                      #shuusei20251212
+    arrange(desc(X1)) %>%                                                #shuusei20251212
+    slice(1)                                                             #shuusei20251212
+  if (nrow(row) == 0) stop("PV fixed cost not found for date <= ", x)    #shuusei20251212
+  as.numeric(row$X2[[1]])                                                #shuusei20251212
+}                                                                        #shuusei20251212
 
-which_PV_marginal <- function(x) {                                     #shuusei20251212
-  v <- kW_price %>% filter(X1 == x) %>% select(X3) %>% unlist %>% unname #shuusei20251212
-  v[1]                                                                  #shuusei20251212
-}                                                                       #shuusei20251212
+which_PV_marginal <- function(x) {                                      #shuusei20251212
+  if (!inherits(x, "Date")) x <- dmy(x)                                  #shuusei20251212
+  row <- kW_price %>%                                                    #shuusei20251212
+    filter(!is.na(X1), X1 <= x) %>%                                      #shuusei20251212
+    arrange(desc(X1)) %>%                                                #shuusei20251212
+    slice(1)                                                             #shuusei20251212
+  if (nrow(row) == 0) stop("PV marginal cost not found for date <= ", x) #shuusei20251212
+  as.numeric(row$X3[[1]])                                                #shuusei20251212
+}                                                                        #shuusei20251212
 
 which_PV_cost <- function(x) {                                         #shuusei20251212
   stop("which_PV_cost() is deprecated. Use which_PV_fixed()/which_PV_marginal() and CAPEX=fixed+marginal*inst_cap.") #shuusei20251212
@@ -1696,9 +1706,20 @@ load_data_f <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, 
   
   #---------------------------------------------------------#
   # PV cost data
-  init_PV <- read_csv('Data/PV_cost_data_est.csv', col_names = FALSE, col_types = cols()) %>% mutate(X1 = dmy(X1)) 
+  init_PV <- read_csv('Data/PV_cost_data_est.csv', col_names = FALSE, col_types = cols()) %>% 
+    mutate(X1 = dmy(X1))                                                #shuusei20251212
+  
+  if (ncol(init_PV) < 3) {                                              #shuusei20251212
+    stop("PV_cost_data_est.csv must have 3 columns: time_series,fixed,marginal") #shuusei20251212
+  }                                                                      #shuusei20251212
   
   kW_price <<- future_PV_price(init_PV, PV_trend, start_date, end_date)
+  
+  # 未来ランでは「過去に導入済み」の adopters も混ざるので、過去年月も含む表をキャッシュ #shuusei20251212
+  kW_price_full <<- bind_rows(                                          #shuusei20251212
+    init_PV %>% filter(X1 < start_date) %>% select(X1, X2, X3),         #shuusei20251212
+    kW_price %>% select(X1, X2, X3)                                     #shuusei20251212
+  ) %>% distinct(X1, .keep_all = TRUE) %>% arrange(X1)                  #shuusei20251212
   
   #---------------------------------------------------------#
   # Electricity use data
@@ -1985,7 +2006,7 @@ run_model_gen <- function(number_of_agents, rn, w, threshold, n_in, dev, agent_n
     agents <- agents %>% map(assign_inst_cap) %>% map(utilities, w = w, ags = agents) %>% 
       map(decide, threshold = threshold)
     
-    
+    adopters <- agents[map_chr(agents, "status") == "Y"]                 #shuusei20251212
     adopters <- agents[map(agents, "status") == 1]
     
     
@@ -2172,23 +2193,35 @@ calc_LCOE_f <- function(adpts, rn, number_of_agents) {
 
 
 
-which_PV_fixed_f <- function(x) {                                      #shuusei20251212
-  kW_price_h <- read_csv('Data/PV_cost_data_est.csv', col_names = FALSE, col_types = cols()) %>%  #shuusei20251212
-    mutate(X1 = dmy(X1)) %>% filter(X1 < kW_price$X1[1])                #shuusei20251212
+which_PV_fixed_f <- function(x) {                                       #shuusei20251212
+  if (!exists("kW_price_full", inherits = TRUE)) {                       #shuusei20251212
+    stop("kW_price_full not found. Run load_data_f() first.")            #shuusei20251212
+  }                                                                       #shuusei20251212
+  if (!inherits(x, "Date")) x <- dmy(x)                                   #shuusei20251212
   
-  kW_price_all <- rbind(kW_price, kW_price_h)                           #shuusei20251212
-  v <- kW_price_all %>% filter(X1 == x) %>% select(X2) %>% unlist %>% unname #shuusei20251212
-  v[1]                                                                  #shuusei20251212
-}                                                                       #shuusei20251212
+  row <- kW_price_full %>%                                               #shuusei20251212
+    filter(!is.na(X1), X1 <= x) %>%                                      #shuusei20251212
+    arrange(desc(X1)) %>%                                                #shuusei20251212
+    slice(1)                                                             #shuusei20251212
+  
+  if (nrow(row) == 0) stop("PV fixed cost not found for date <= ", x)    #shuusei20251212
+  as.numeric(row$X2[[1]])                                                #shuusei20251212
+}                                                                        #shuusei20251212                                                                      #shuusei20251212
 
-which_PV_marginal_f <- function(x) {                                   #shuusei20251212
-  kW_price_h <- read_csv('Data/PV_cost_data_est.csv', col_names = FALSE, col_types = cols()) %>%  #shuusei20251212
-    mutate(X1 = dmy(X1)) %>% filter(X1 < kW_price$X1[1])                #shuusei20251212
+which_PV_marginal_f <- function(x) {                                    #shuusei20251212
+  if (!exists("kW_price_full", inherits = TRUE)) {                        #shuusei20251212
+    stop("kW_price_full not found. Run load_data_f() first.")             #shuusei20251212
+  }                                                                       #shuusei20251212
+  if (!inherits(x, "Date")) x <- dmy(x)                                   #shuusei20251212
   
-  kW_price_all <- rbind(kW_price, kW_price_h)                           #shuusei20251212
-  v <- kW_price_all %>% filter(X1 == x) %>% select(X3) %>% unlist %>% unname #shuusei20251212
-  v[1]                                                                  #shuusei20251212
-}                                                                       #shuusei20251212
+  row <- kW_price_full %>%                                               #shuusei20251212
+    filter(!is.na(X1), X1 <= x) %>%                                      #shuusei20251212
+    arrange(desc(X1)) %>%                                                #shuusei20251212
+    slice(1)                                                             #shuusei20251212
+  
+  if (nrow(row) == 0) stop("PV marginal cost not found for date <= ", x) #shuusei20251212
+  as.numeric(row$X3[[1]])                                                #shuusei20251212
+}                                                                        #shuusei20251212
 
 which_PV_cost_f <- function(x) {                                       #shuusei20251212
   stop("which_PV_cost_f() is deprecated. Use which_PV_fixed_f()/which_PV_marginal_f().") #shuusei20251212

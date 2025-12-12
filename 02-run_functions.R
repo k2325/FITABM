@@ -216,7 +216,7 @@ run_model <- function(number_of_agents, rn, w, threshold) {
   ## デシル別の平均 meet_demand を計算（roof_limit 正規化用）          #shuusei20251129
   compute_meet_demand_ref_by_decile(agents)                              #shuusei20251129
   
-  adopters <- agents[map(agents, "status") == 1]
+  adopters <- agents[map_chr(agents, "status") == "Y"]                   #shuusei20251212
   
   if (length(adopters) > 0){
     n_owners <<- owner_occupiers[[1, 2]]
@@ -350,20 +350,26 @@ run_model <- function(number_of_agents, rn, w, threshold) {
     marginal_current<<- kW_price$X3[i]   # £/kW                               #shuusei20251212
     # kW_price_current は廃止（使わない）                                     #shuusei20251212
     current_date <<- FiT$time_series[i]
-    elec_index <- which(sapply(elec_price_time$X1, function(x) grep(x, current_date)) == 1)
-    elec_price <<- elec_price_time[[elec_index, 2]]/100
-    n_owners <<- owner_occupiers[[elec_index, 2]]
+    
+    yr_now <- year(current_date)                                        #shuusei20251212
+    
+    elec_index <- match(yr_now, elec_price_time$X1)                     #shuusei20251212
+    if (is.na(elec_index)) stop("No electricity price for year: ", yr_now) #shuusei20251212
+    elec_price <<- elec_price_time$X2[elec_index]/100                   #shuusei20251212
+    
+    owner_index <- match(yr_now, owner_occupiers$X1)                    #shuusei20251212
+    if (is.na(owner_index)) stop("No owner_occupiers for year: ", yr_now) #shuusei20251212
+    n_owners <<- owner_occupiers$X2[owner_index]                        #shuusei20251212
     
     agents <- agents %>% map(assign_inst_cap) %>% map(utilities, w = w, ags = agents) %>% 
       map(decide, threshold = threshold)
     
-    
-    adopters <- agents[map(agents, "status") == 1]
+    adopters <- agents[map_chr(agents, "status") == "Y"]                 #shuusei20251212
     
     
     # Write data
-    k <- extract(agents, "status") == "Y"
-    avg_u$frac_of_adopters[i] <- length(k[k == TRUE])/number_of_agents
+    k <- map_chr(agents, "status") == "Y"                               #shuusei20251212
+    avg_u$frac_of_adopters[i] <- sum(k, na.rm = TRUE)/number_of_agents  #shuusei20251212
     avg_u$mean_u_ec[i] <- mean(extract(agents, "u_ec"))
     avg_u$mean_u_inc[i] <- mean(extract(agents, "u_inc"))
     avg_u$mean_u_soc[i] <- mean(extract(agents, "u_soc"))
@@ -778,7 +784,7 @@ run_model_f <- function(agent_name, rn, w, threshold) {
   
   # initial reference capacity:
   
-  adopters <- agents[map(agents, "status") == 1]
+  adopters <- agents[map_chr(agents, "status") == "Y"]                   #shuusei20251212
   
   if (length(adopters) > 0){
     n_owners <<- owner_occupiers[[1, 2]]
@@ -844,13 +850,12 @@ run_model_f <- function(agent_name, rn, w, threshold) {
     agents <- agents %>% map(assign_inst_cap) %>% map(utilities, w = w, ags = agents) %>% 
       map(decide, threshold = threshold)
     
-    
-    adopters <- agents[map(agents, "status") == 1]
+    adopters <- agents[map_chr(agents, "status") == "Y"]                 #shuusei20251212
     
     
     # Write data
-    k <- extract(agents, "status") == "Y"
-    avg_u$frac_of_adopters[i] <- length(k[k == TRUE])/number_of_agents
+    k <- map_chr(agents, "status") == "Y"                               #shuusei20251212
+    avg_u$frac_of_adopters[i] <- sum(k, na.rm = TRUE)/number_of_agents  #shuusei20251212
     avg_u$mean_u_ec[i] <- mean(extract(agents, "u_ec"))
     avg_u$mean_u_inc[i] <- mean(extract(agents, "u_inc"))
     avg_u$mean_u_soc[i] <- mean(extract(agents, "u_soc"))
