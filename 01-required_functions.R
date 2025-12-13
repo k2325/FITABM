@@ -16,7 +16,7 @@
 #------------------------------- 1.1 Set-up -------------------------------------#
 
 load_data <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, init_fit, final_fit, exp_tar,
-                      dep_caps = F, cap){
+                      dep_caps = F, cap, reload_deployment = FALSE){  #shuusei20251212
   # end_date: date up to which simulation will run
   # FiT_type: real_h, linear, perc_red
   if(missing(start_date)) start_date <- "1apr2010"
@@ -304,6 +304,23 @@ build_deployment_fast <- function(all_inst_cap, ts_end){                        
   
   return(dep)                                                                     #shuusei20251212
 }                                                                                 #shuusei20251212
+
+#---------------------------------------------------------#
+# deployment が使える形かチェックする関数を追加           #shuusei20251212
+is_valid_deployment <- function(dep, need_last = NULL){                            #shuusei20251212
+  if (!is.data.frame(dep)) return(FALSE)                                           #shuusei20251212
+  req <- c("time_series","real_cap","avg_cap")                                     #shuusei20251212
+  if (!all(req %in% names(dep))) return(FALSE)                                     #shuusei20251212
+  if (!inherits(dep$time_series, "Date")) return(FALSE)                            #shuusei20251212
+  rc <- suppressWarnings(as.numeric(dep$real_cap))                                 #shuusei20251212
+  if (all(!is.finite(rc)) || max(rc, na.rm = TRUE) <= 0) return(FALSE)            #shuusei20251212
+  if (!is.null(need_last)) {                                                      #shuusei20251212
+    if (max(dep$time_series, na.rm = TRUE) < need_last) return(FALSE)             #shuusei20251212
+  }                                                                               #shuusei20251212
+  TRUE                                                                            #shuusei20251212
+}                                                                                 #shuusei20251212
+#---------------------------------------------------------#
+
 
 set_FiT <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, init_fit, final_fit, exp_tar){
   if (end_date == FiT_end_date){
