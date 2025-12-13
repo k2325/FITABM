@@ -139,23 +139,28 @@ load_data <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, in
   if(exists("deployment")) {
     cat("\nDeployment data is already loaded - if you want to reload it, delete the 'deployment' variable\n")
   } else {
-    ts <- seq(dmy("01jan2010"), end_date, by = '1 month')
     
-    all_inst_cap <- process_inst_data() %>% 
-      filter(technology_type == "Photovoltaic", installed_capacity <= 10, installationtype == "Domestic")
-    current_cap <- vector(length = length(ts))
-    avg_cap <- vector(length = length(ts))
-    for (i in 1:length(ts)) {
-      date_now <- ts[i] + months(1)
-      installed_now <- filter(all_inst_cap, commissioned_date < date_now)
-      current_cap[i] <- sum(installed_now$installed_capacity)
-      avg_cap[i] <- current_cap[i]/nrow(installed_now)
-    }
+    deploy_cache_path <- "Data/deployment_cache.rds"                                #shuusei20251212
+    need_last <- end_date %m+% months(1)                                            #shuusei20251212
+    loaded_cache <- FALSE                                                          #shuusei20251212
     
+    if (file.exists(deploy_cache_path)) {                                          #shuusei20251212
+      dep_tmp <- readRDS(deploy_cache_path)                                        #shuusei20251212
+      if (is.data.frame(dep_tmp) && "time_series" %in% names(dep_tmp) &&           #shuusei20251212
+          max(dep_tmp$time_series, na.rm = TRUE) >= need_last) {                   #shuusei20251212
+        deployment <<- dep_tmp %>% filter(time_series <= need_last)                #shuusei20251212
+        loaded_cache <- TRUE                                                       #shuusei20251212
+      }                                                                            #shuusei20251212
+    }                                                                              #shuusei20251212
     
-    deployment <<- data.frame(time_series = dmy("01feb2010") + months(0:(length(ts)-1)), 
-                              real_cap = current_cap/1000, avg_cap = avg_cap)
-    rm(all_inst_cap, installed_now, current_cap, date_now)
+    if (!loaded_cache) {                                                           #shuusei20251212
+      all_inst_cap <- process_inst_data() %>%                                      #shuusei20251212
+        filter(installed_capacity <= 10, installationtype == "Domestic")           #shuusei20251212
+      
+      deployment <<- build_deployment_fast(all_inst_cap, ts_end = end_date)        #shuusei20251212
+      saveRDS(deployment, deploy_cache_path)                                       #shuusei20251212
+      rm(all_inst_cap)                                                            #shuusei20251212
+    }                                                                              #shuusei20251212
   }
   #---------------------------------------------------------#
   
@@ -247,7 +252,12 @@ init_tenure_region_counts <- function(){                                #shuusei
   total_priv <<- sum(tenure_region_counts$priv)                         #shuusei20251205
 }                                                                       #shuusei20251205
 
-process_inst_data <- function(){
+process_inst_data <- function(cache_path = "Data/cache_process_inst_data_pv.rds",  #shuusei20251212
+                              force = FALSE){                                     #shuusei20251212
+  if (!force && file.exists(cache_path)) {                                        #shuusei20251212
+    return(readRDS(cache_path))                                                   #shuusei20251212
+  }                                                                               #shuusei20251212
+  
   a <- read_csv("Data/all_inst_1.csv", skip = 2, col_types = cols())
   b <- read_csv("Data/all_inst_2.csv", skip = 2, col_types = cols())
   
@@ -255,16 +265,45 @@ process_inst_data <- function(){
   
   all_inst$InstallationType <- as.factor(all_inst$InstallationType)
   
-  names(all_inst) %<>% str_replace_all(" \\(.*\\)", "") %>% str_replace_all(" ", "_") %>% str_to_lower 
+  names(all_inst) %<>% str_replace_all(" \\(.*\\)", "") %>%
+    str_replace_all(" ", "_") %>% str_to_lower
   
   all_inst %<>% filter(technology_type == "Photovoltaic")
   
-  all_inst %<>% select(technology_type, installed_capacity, commissioned_date, installationtype) 
+  all_inst %<>% select(technology_type, installed_capacity, commissioned_date, installationtype)
   
   all_inst$commissioned_date %<>% dmy
   
+  saveRDS(all_inst, cache_path)                                                   #shuusei20251212
   return(all_inst)
 }
+
+build_deployment_fast <- function(all_inst_cap, ts_end){                           #shuusei20251212
+  if (!inherits(ts_end, "Date")) ts_end <- dmy(ts_end)                             #shuusei20251212
+  
+  ts <- seq(dmy("01jan2010"), ts_end, by = "1 month")                              #shuusei20251212
+  
+  monthly <- all_inst_cap %>%                                                     #shuusei20251212
+    filter(!is.na(commissioned_date), !is.na(installed_capacity)) %>%             #shuusei20251212
+    mutate(comm_month = floor_date(commissioned_date, unit = "month")) %>%        #shuusei20251212
+    group_by(comm_month) %>%                                                      #shuusei20251212
+    summarise(monthly_cap = sum(installed_capacity, na.rm = TRUE),                #shuusei20251212
+              monthly_n   = dplyr::n(),                                           #shuusei20251212
+              .groups = "drop")                                                   #shuusei20251212
+  
+  dep <- tibble(comm_month = ts) %>%                                              #shuusei20251212
+    left_join(monthly, by = "comm_month") %>%                                     #shuusei20251212
+    mutate(monthly_cap = ifelse(is.na(monthly_cap), 0, monthly_cap),              #shuusei20251212
+           monthly_n   = ifelse(is.na(monthly_n),   0, monthly_n),                #shuusei20251212
+           cum_cap     = cumsum(monthly_cap),                                     #shuusei20251212
+           cum_n       = cumsum(monthly_n),                                       #shuusei20251212
+           avg_cap     = ifelse(cum_n > 0, cum_cap / cum_n, NA_real_),            #shuusei20251212
+           time_series = comm_month + months(1),                                  #shuusei20251212
+           real_cap    = cum_cap/1000) %>%                                        #shuusei20251212
+    select(time_series, real_cap, avg_cap)                                        #shuusei20251212
+  
+  return(dep)                                                                     #shuusei20251212
+}                                                                                 #shuusei20251212
 
 set_FiT <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, init_fit, final_fit, exp_tar){
   if (end_date == FiT_end_date){
@@ -382,16 +421,19 @@ Household_Agent <- function(a, b, c, d) {
   # a = Y for adopter, N for non-adopter (char)
   # b = income (annual, £)                                            #shuusei20251205
   # c = tenure: "own","priv","soc"                                    #shuusei20251205
-  # d = UK region (A–K)                                                #shuusei20251205
+  # d = UK region (A–K)                                               #shuusei20251205
   structure(list(factor(a, levels= c("Y", "N")), 
                  b, 
                  factor(c, levels = c("own","priv","soc")),            #shuusei20251205
                  factor(d, levels= c(LETTERS[1:11])), 
-                 NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 
+                 NULL, NULL, 
+                 NULL,                                                 #shuusei20251212  # SCR（self-consumption rate）
+                 NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
                  NULL),  
             class = "Household", 
             names = c("status", "income", "tenure", "region",          #shuusei20251205
-                      "LF", "consumption", 
+                      "LF", "consumption",
+                      "SCR",                                           #shuusei20251212
                       "inst_cap", "network", "u_inc", "u_ec", "u_soc", "u_cap", "u_tot", "FiT", "exp_tar", "date"))
 }
 
@@ -643,6 +685,85 @@ assign_elec_cons <- function(A) {                                       #shuusei
   return(A)                                                             #shuusei20251205
 }
 
+
+
+#------------------ Self-consumption LUT (PV only / In half the day) ------------------# #shuusei20251212
+
+init_scr_lut_pv_halfday <- function(){                                  #shuusei20251212
+  # 列：C（年間消費kWh/年）の区間境界（右端6000は番兵）                #shuusei20251212
+  SCR_C_BREAKS <<- c(1500,2000,2500,3000,3500,4000,4500,5000,5500,6000)  #shuusei20251212
+  
+  # 行：G（年間発電kWh/年）の区間境界（右端6000は番兵）                #shuusei20251212
+  SCR_G_BREAKS <<- seq(0, 6000, by = 300)                                #shuusei20251212
+  
+  # 値：SCR（%）→ 0-1 にして保持（20行×9列）                           #shuusei20251212
+  SCR_LUT_PV_HALFDAY <<- matrix(c(                                      #shuusei20251212
+    62.5,62.5,74.1,79.2,84.4,89.3,90.3,92.1,94.9,                       #shuusei20251212  # 0-299
+    46.2,46.2,55.4,59.7,64.0,68.1,69.4,71.3,73.7,                       #shuusei20251212  # 300-599
+    41.1,44.5,48.2,52.5,56.9,61.0,61.7,62.3,65.8,                       #shuusei20251212  # 600-899
+    33.7,37.6,41.2,44.7,48.2,51.7,53.1,54.8,57.2,                       #shuusei20251212  # 900-1199
+    29.1,32.9,36.4,39.7,43.0,45.8,48.3,49.9,51.6,                       #shuusei20251212  # 1200-1499
+    25.9,29.0,32.5,35.8,39.0,41.4,44.3,46.1,47.3,                       #shuusei20251212  # 1500-1799
+    23.2,26.0,29.4,32.6,35.8,38.1,41.0,42.7,43.9,                       #shuusei20251212  # 1800-2099
+    21.0,23.6,26.7,29.9,33.0,35.6,38.1,39.9,41.2,                       #shuusei20251212  # 2100-2399
+    19.0,21.7,24.5,27.6,30.6,33.4,35.7,37.4,39.0,                       #shuusei20251212  # 2400-2699
+    17.4,20.0,22.6,25.6,28.6,31.3,33.6,35.4,37.1,                       #shuusei20251212  # 2700-2999
+    16.1,18.6,21.2,24.0,26.8,29.4,31.8,33.5,35.2,                       #shuusei20251212  # 3000-3299
+    15.0,17.3,20.0,22.6,25.3,27.7,30.2,31.9,33.4,                       #shuusei20251212  # 3300-3599
+    14.1,16.3,18.9,21.5,24.1,26.3,28.8,30.4,31.9,                       #shuusei20251212  # 3600-3899
+    13.3,15.4,18.0,20.5,23.1,25.2,27.5,29.1,30.6,                       #shuusei20251212  # 3900-4199
+    12.7,14.7,17.1,19.5,22.0,24.2,26.4,28.0,29.8,                       #shuusei20251212  # 4200-4499
+    12.0,14.0,16.3,18.7,21.1,23.2,25.3,27.0,29.0,                       #shuusei20251212  # 4500-4799
+    11.4,13.4,15.5,17.8,20.2,22.3,24.4,26.1,28.2,                       #shuusei20251212  # 4800-5099
+    10.9,12.9,14.8,17.2,19.5,21.6,23.5,25.3,27.2,                       #shuusei20251212  # 5100-5399
+    10.5,12.3,14.3,16.6,18.8,21.0,22.7,24.6,26.4,                       #shuusei20251212  # 5400-5699
+    10.3,11.6,14.0,16.1,18.2,20.7,21.9,23.8,25.8                        #shuusei20251212  # 5700-5999
+  ), nrow = 20, byrow = TRUE) / 100                                      #shuusei20251212
+}                                                                        #shuusei20251212
+
+
+lookup_scr_pv_halfday <- function(C, G){                                 #shuusei20251212
+  # C: 年間消費(kWh/年), G: 年間発電(kWh/年)                              #shuusei20251212
+  if (!exists("SCR_LUT_PV_HALFDAY", inherits = TRUE)) {                  #shuusei20251212
+    init_scr_lut_pv_halfday()                                            #shuusei20251212
+  }                                                                      #shuusei20251212
+  
+  # 旧モデル互換：C が NA なら 0.5 に戻す（必要なら変更可）             #shuusei20251212
+  if (!is.finite(C) || is.na(C)) return(0.5)                             #shuusei20251212
+  if (!is.finite(G) || is.na(G)) return(0.5)                             #shuusei20251212
+  
+  # 消費量のクリッピング：C<1500→1500列、C>=6000→5500列                 #shuusei20251212
+  C_use <- max(1500, min(5999, C))                                       #shuusei20251212
+  
+  # 発電量のクリッピング（ルックアップ用）：G>=6000→最終行              #shuusei20251212
+  G_use <- max(0, min(5999, G))                                          #shuusei20251212
+  
+  # findInterval は「breaks[i] <= x < breaks[i+1]」の i を返す           #shuusei20251212
+  col_idx <- findInterval(C_use, SCR_C_BREAKS, rightmost.closed = TRUE)  #shuusei20251212
+  row_idx <- findInterval(G_use, SCR_G_BREAKS, rightmost.closed = TRUE)  #shuusei20251212
+  
+  # 念のためガード                                                     #shuusei20251212
+  col_idx <- max(1L, min(ncol(SCR_LUT_PV_HALFDAY), col_idx))             #shuusei20251212
+  row_idx <- max(1L, min(nrow(SCR_LUT_PV_HALFDAY), row_idx))             #shuusei20251212
+  
+  scr <- SCR_LUT_PV_HALFDAY[row_idx, col_idx]                            #shuusei20251212
+  if (!is.finite(scr) || is.na(scr)) scr <- 0.5                          #shuusei20251212
+  
+  return(scr)                                                            #shuusei20251212  # 0-1
+}                                                                        #shuusei20251212
+
+
+calc_self_consumed_kwh <- function(C, G){                                #shuusei20251212
+  # 表の上限(5999kWh/年)を超える分は self-consumption 推計に入れず、全量売電扱い #shuusei20251212
+  scr  <- lookup_scr_pv_halfday(C, G)                                    #shuusei20251212
+  Gcap <- max(0, min(5999, G))                                           #shuusei20251212
+  sc_kwh <- scr * Gcap                                                   #shuusei20251212
+  return(list(scr = scr, sc_kwh = sc_kwh, Gcap = Gcap))                  #shuusei20251212
+}                                                                        #shuusei20251212
+
+
+
+
 #tyousei
 assign_u_inc <- function(A, mean_inc) {
   A$u_inc <- 1/(1+exp((mean_inc-A$income)*0.0002))
@@ -817,6 +938,11 @@ assign_inst_cap <- function(A) {
 
 utilities <- function(A, w, ags) {
   # A is an object representing an agent
+  
+  # 自家消費率（SCR）をエージェントに付与（0-1）                     #shuusei20251212
+  prod_tmp <- output(A$inst_cap, A$LF)                                  #shuusei20251212
+  A$SCR <- lookup_scr_pv_halfday(C = A$consumption, G = prod_tmp)       #shuusei20251212
+  
   pp <- simple_PP(A)
   A$u_ec <- (20-pp)/19
   A$u_soc <- soc_utility(A, ags)
@@ -871,37 +997,45 @@ simple_PP <- function(A) {
 }
 
 
-annual_return <- function(A){
-  prod <- output(A$inst_cap, A$LF)
+annual_return <- function(A){                                             #shuusei20251213
+  prod <- output(A$inst_cap, A$LF)                                        #shuusei20251213
   
-  # まずシステム容量によるベースFiTを決定                           #shuusei20251116
-  if (A$inst_cap <= 4){
-    base_FiT <- FiT_current_small                                       #shuusei20251116
-  } else {
-    base_FiT <- FiT_current_large                                       #shuusei20251116
-  }                                                                     #shuusei20251116
+  # 念のため：prod が NA/非数なら収益0扱い（比較エラー防止）            #shuusei20251213
+  if (!is.finite(prod) || is.na(prod)) return(0)                          #shuusei20251213
   
-  # 未来シミュレーションかつ低所得世帯ならFiTを上乗せ                 #shuusei20251116
-  eff_FiT <- base_FiT                                                   #shuusei20251116
-  if (exists("use_low_income_bonus") && isTRUE(use_low_income_bonus) && #shuusei20251116
-      exists("low_income_cutoff") && !is.null(low_income_cutoff) &&     #shuusei20251116
-      !is.na(A$income) && A$income <= low_income_cutoff) {              #shuusei20251116
-    eff_FiT <- base_FiT + extra_FiT_low                                 #shuusei20251116
-  }                                                                     #shuusei20251116
+  # 容量によるベースFiTを決定                                            #shuusei20251213
+  base_FiT <- if (A$inst_cap <= 4) FiT_current_small else FiT_current_large  #shuusei20251213
   
-  R_FiT <- prod*eff_FiT                                                 #shuusei20251116
-  displaced <- export <- 0.5*prod
-  R_exp <- export*exp_tar_current
-  R_sav <- displaced*elec_price
-  R <- R_FiT + R_sav + R_exp
-}
+  # 未来シミュレーションかつ低所得世帯ならFiTを上乗せ                    #shuusei20251213
+  eff_FiT <- base_FiT                                                     #shuusei20251213
+  if (exists("use_low_income_bonus") && isTRUE(use_low_income_bonus) &&   #shuusei20251213
+      exists("low_income_cutoff") && !is.null(low_income_cutoff) &&       #shuusei20251213
+      !is.na(A$income) && A$income <= low_income_cutoff) {                #shuusei20251213
+    eff_FiT <- base_FiT + extra_FiT_low                                    #shuusei20251213
+  }                                                                       #shuusei20251213
+  
+  # FiT収入（£/year）                                                     #shuusei20251213
+  R_FiT <- prod * eff_FiT                                                 #shuusei20251213
+  
+  # みなし輸出（deemed export）は 50% 固定                               #shuusei20251213
+  export_deemed <- 0.5 * prod                                             #shuusei20251213
+  R_exp <- export_deemed * exp_tar_current                                #shuusei20251213
+  
+  # 自家消費（LUT から推計）→ 節約（£/year）                              #shuusei20251213
+  sc <- calc_self_consumed_kwh(C = A$consumption, G = prod)               #shuusei20251213
+  displaced <- sc$sc_kwh                                                  #shuusei20251213
+  R_sav <- displaced * elec_price                                         #shuusei20251213
+  
+  R <- R_FiT + R_sav + R_exp                                              #shuusei20251213
+  return(as.numeric(R))                                                   #shuusei20251213
+}                                                                         #shuusei20251213
 
-
-output <- function(x, y) {
+output <- function(x, y) {                                                #shuusei20251213
   # x = installed capacity
   # y = load factor
-  P <- x*24*365*y
-}
+  P <- x*24*365*y                                                         #shuusei20251213
+  return(P)                                                               #shuusei20251213
+}                                                                         #shuusei20251213
 
 #soc_utility <- function(A, ags) {
   #neighbours <- ags[A$network]
@@ -1747,23 +1881,28 @@ load_data_f <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, 
     cat("\nDeployment data is already loaded - if you want to reload it, delete the 'deployment' variable\n")
   } else {
     
-    ts <- seq(dmy("01jan2010"), dmy("1nov2016"), by = '1 month')
+    deploy_cache_path <- "Data/deployment_cache.rds"                                #shuusei20251212
+    ts_end_dep <- dmy("1nov2016")                                                   #shuusei20251212
+    need_last <- ts_end_dep %m+% months(1)                                          #shuusei20251212
+    loaded_cache <- FALSE                                                          #shuusei20251212
     
-    all_inst_cap <- process_inst_data() %>% 
-      filter(technology_type == "Photovoltaic", installed_capacity <= 10, installationtype == "Domestic")
-    current_cap <- vector(length = length(ts))
-    avg_cap <- vector(length = length(ts))
-    for (i in 1:length(ts)) {
-      date_now <- ts[i] + months(1)
-      installed_now <- filter(all_inst_cap, commissioned_date < date_now)
-      current_cap[i] <- sum(installed_now$installed_capacity)
-      avg_cap[i] <- current_cap[i]/nrow(installed_now)
-    }
+    if (file.exists(deploy_cache_path)) {                                          #shuusei20251212
+      dep_tmp <- readRDS(deploy_cache_path)                                        #shuusei20251212
+      if (is.data.frame(dep_tmp) && "time_series" %in% names(dep_tmp) &&           #shuusei20251212
+          max(dep_tmp$time_series, na.rm = TRUE) >= need_last) {                   #shuusei20251212
+        deployment <<- dep_tmp %>% filter(time_series <= need_last)                #shuusei20251212
+        loaded_cache <- TRUE                                                       #shuusei20251212
+      }                                                                            #shuusei20251212
+    }                                                                              #shuusei20251212
     
-    
-    deployment <<- data.frame(time_series = dmy("01feb2010") + months(0:(length(ts)-1)), 
-                              real_cap = current_cap/1000, avg_cap = avg_cap)
-    rm(all_inst_cap, installed_now, current_cap, date_now)
+    if (!loaded_cache) {                                                           #shuusei20251212
+      all_inst_cap <- process_inst_data() %>%                                      #shuusei20251212
+        filter(installed_capacity <= 10, installationtype == "Domestic")           #shuusei20251212
+      
+      deployment <<- build_deployment_fast(all_inst_cap, ts_end = ts_end_dep)      #shuusei20251212
+      saveRDS(deployment, deploy_cache_path)                                       #shuusei20251212
+      rm(all_inst_cap)                                                            #shuusei20251212
+    }                                                                              #shuusei20251212
   }
   #---------------------------------------------------------#
   
