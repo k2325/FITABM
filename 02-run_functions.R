@@ -364,11 +364,11 @@ run_model <- function(number_of_agents, rn, w, threshold) {
     agents <- agents %>% map(assign_inst_cap) %>% map(utilities, w = w, ags = agents) %>% 
       map(decide, threshold = threshold)
     
-    adopters <- agents[map_chr(agents, "status") == "Y"]                 #shuusei20251212
+    adopters <- agents[extract(agents, "status") == "Y"]                 #shuusei20251212 #shuusei20251213
     
     
     # Write data
-    k <- map_chr(agents, "status") == "Y"                               #shuusei20251212
+    k <- extract(agents, "status") == "Y"                                #shuusei20251212 #shuusei20251213
     avg_u$frac_of_adopters[i] <- sum(k, na.rm = TRUE)/number_of_agents  #shuusei20251212
     avg_u$mean_u_ec[i] <- mean(extract(agents, "u_ec"))
     avg_u$mean_u_inc[i] <- mean(extract(agents, "u_inc"))
@@ -784,7 +784,7 @@ run_model_f <- function(agent_name, rn, w, threshold) {
   
   # initial reference capacity:
   
-  adopters <- agents[map_chr(agents, "status") == "Y"]                   #shuusei20251212
+  adopters <- agents[extract(agents, "status") == "Y"]                   #shuusei20251212 #shuusei20251213
   
   if (length(adopters) > 0){
     n_owners <<- owner_occupiers[[1, 2]]
@@ -854,11 +854,11 @@ run_model_f <- function(agent_name, rn, w, threshold) {
     agents <- agents %>% map(assign_inst_cap) %>% map(utilities, w = w, ags = agents) %>% 
       map(decide, threshold = threshold)
     
-    adopters <- agents[map_chr(agents, "status") == "Y"]                 #shuusei20251212
+    adopters <- agents[extract(agents, "status") == "Y"]                 #shuusei20251212 #shuusei20251213
     
     
     # Write data
-    k <- map_chr(agents, "status") == "Y"                               #shuusei20251212
+    k <- extract(agents, "status") == "Y"                                #shuusei20251212 #shuusei20251213
     avg_u$frac_of_adopters[i] <- sum(k, na.rm = TRUE)/number_of_agents  #shuusei20251212
     avg_u$mean_u_ec[i] <- mean(extract(agents, "u_ec"))
     avg_u$mean_u_inc[i] <- mean(extract(agents, "u_inc"))

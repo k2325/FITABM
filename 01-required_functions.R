@@ -471,9 +471,17 @@ Household_Agent <- function(a, b, c, d) {
                       "inst_cap", "network", "u_inc", "u_ec", "u_soc", "u_cap", "u_tot", "FiT", "exp_tar", "date"))
 }
 
-extract <- function(x, str) { # x is adopters or agents (a list of Household objects)
-  if (length(x) > 0) unname(unlist(sapply(x, function (x) x[str])))
-}
+extract <- function(x, str) { # x is adopters or agents (a list of Household objects) #shuusei20251213
+  if (length(x) == 0) return(NULL)                                                #shuusei20251213
+  
+  vals <- lapply(x, function(xx) xx[[str]])                                       #shuusei20251213
+  
+  # factor を文字に戻す（"Y"/"N" が "1"/"2" になって比較不能になるのを防ぐ） #shuusei20251213
+  vals <- lapply(vals, function(v) if (is.factor(v)) as.character(v) else v)      #shuusei20251213
+  
+  out <- do.call(c, vals)                                                         #shuusei20251213
+  unname(out)                                                                     #shuusei20251213
+}                                                                                #shuusei20251213
 
 # income と meet_demand の関係をエクスポートする補助関数              #shuusei20251127
 export_meet_demand_vs_income <- function(agents,                        #shuusei20251127
@@ -2196,7 +2204,7 @@ run_model_gen <- function(number_of_agents, rn, w, threshold, n_in, dev, agent_n
     agents <- agents %>% map(assign_inst_cap) %>% map(utilities, w = w, ags = agents) %>% 
       map(decide, threshold = threshold)
     
-    adopters <- agents[map_chr(agents, "status") == "Y"]                 #shuusei20251212
+    adopters <- agents[extract(agents, "status") == "Y"]                 #shuusei20251212 #shuusei20251213
     
     
     # Write data
