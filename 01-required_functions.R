@@ -136,31 +136,48 @@ load_data <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, in
   
   #---------------------------------------------------------#
   # Real deployment data
-  if(exists("deployment")) {
-    cat("\nDeployment data is already loaded - if you want to reload it, delete the 'deployment' variable\n")
-  } else {
+  
+  deploy_cache_path <- "Data/deployment_cache.rds"                               #shuusei20251213
+  need_last <- end_date %m+% months(1)                                           #shuusei20251213
+  
+  dep_exists <- exists("deployment", inherits = TRUE)                            #shuusei20251213
+  dep_valid  <- FALSE                                                           #shuusei20251213
+  if (dep_exists) {                                                             #shuusei20251213
+    dep_valid <- is_valid_deployment(get("deployment", inherits = TRUE),         #shuusei20251213
+                                     need_last = need_last)                     #shuusei20251213
+  }                                                                              #shuusei20251213
+  
+  if (dep_exists && dep_valid && !isTRUE(reload_deployment)) {                  #shuusei20251213
+    cat("\nDeployment data is already loaded and valid. ",
+        "Set reload_deployment=TRUE to force rebuild.\n", sep = "")              #shuusei20251213
     
-    deploy_cache_path <- "Data/deployment_cache.rds"                                #shuusei20251212
-    need_last <- end_date %m+% months(1)                                            #shuusei20251212
-    loaded_cache <- FALSE                                                          #shuusei20251212
+  } else {                                                                       #shuusei20251213
     
-    if (file.exists(deploy_cache_path)) {                                          #shuusei20251212
-      dep_tmp <- readRDS(deploy_cache_path)                                        #shuusei20251212
-      if (is.data.frame(dep_tmp) && "time_series" %in% names(dep_tmp) &&           #shuusei20251212
-          max(dep_tmp$time_series, na.rm = TRUE) >= need_last) {                   #shuusei20251212
-        deployment <<- dep_tmp %>% filter(time_series <= need_last)                #shuusei20251212
-        loaded_cache <- TRUE                                                       #shuusei20251212
-      }                                                                            #shuusei20251212
-    }                                                                              #shuusei20251212
+    if (isTRUE(reload_deployment)) {                                            #shuusei20251213
+      cat("\n[load_data] reload_deployment=TRUE -> rebuilding deployment (ignore caches)\n") #shuusei20251213
+    } else if (dep_exists && !dep_valid) {                                       #shuusei20251213
+      cat("\n[load_data] existing `deployment` is invalid/outdated -> rebuilding\n")        #shuusei20251213
+    }                                                                            #shuusei20251213
     
-    if (!loaded_cache) {                                                           #shuusei20251212
-      all_inst_cap <- process_inst_data() %>%                                      #shuusei20251212
-        filter(installed_capacity <= 10, installationtype == "Domestic")           #shuusei20251212
+    loaded_cache <- FALSE                                                        #shuusei20251213
+    
+    # reload_deployment=TRUE のときは「deployment_cache.rds を読まない」＝強制再構築   #shuusei20251213
+    if (!isTRUE(reload_deployment) && file.exists(deploy_cache_path)) {          #shuusei20251213
+      dep_tmp <- readRDS(deploy_cache_path)                                      #shuusei20251213
+      if (is_valid_deployment(dep_tmp, need_last = need_last)) {                 #shuusei20251213
+        deployment <<- dep_tmp %>% filter(time_series <= need_last)              #shuusei20251213
+        loaded_cache <- TRUE                                                     #shuusei20251213
+      }                                                                          #shuusei20251213
+    }                                                                            #shuusei20251213
+    
+    if (!loaded_cache) {                                                         #shuusei20251213
+      all_inst_cap <- process_inst_data(force = isTRUE(reload_deployment)) %>%   #shuusei20251213
+        filter(installed_capacity <= 10, installationtype == "Domestic")         #shuusei20251213
       
-      deployment <<- build_deployment_fast(all_inst_cap, ts_end = end_date)        #shuusei20251212
-      saveRDS(deployment, deploy_cache_path)                                       #shuusei20251212
-      rm(all_inst_cap)                                                            #shuusei20251212
-    }                                                                              #shuusei20251212
+      deployment <<- build_deployment_fast(all_inst_cap, ts_end = end_date)      #shuusei20251213
+      saveRDS(deployment, deploy_cache_path)                                     #shuusei20251213
+      rm(all_inst_cap)                                                          #shuusei20251213
+    }                                                                            #shuusei20251213
   }
   #---------------------------------------------------------#
   
@@ -1751,7 +1768,8 @@ load_plot_sim_data <- function(save_name, plot_u = T, plot_cost = T, plot_prod =
 
 load_data_f <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, init_fit, final_fit, exp_tar,
                         elec_trend, PV_trend,
-                        dep_caps = F, cap){
+                        dep_caps = F, cap,
+                        reload_deployment = FALSE){  #shuusei20251213
   
   # end_date: date up to which simulation will run
   # FiT_type: real_h, linear, perc_red, ann_perc_red
@@ -1894,32 +1912,48 @@ load_data_f <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, 
   
   #---------------------------------------------------------#
   # Real deployment data
-  if(exists("deployment")) {
-    cat("\nDeployment data is already loaded - if you want to reload it, delete the 'deployment' variable\n")
-  } else {
+  
+  deploy_cache_path <- "Data/deployment_cache.rds"                                #shuusei20251213
+  ts_end_dep <- dmy("1nov2016")                                                   #shuusei20251213
+  need_last <- ts_end_dep %m+% months(1)                                          #shuusei20251213
+  
+  dep_exists <- exists("deployment", inherits = TRUE)                             #shuusei20251213
+  dep_valid  <- FALSE                                                            #shuusei20251213
+  if (dep_exists) {                                                              #shuusei20251213
+    dep_valid <- is_valid_deployment(get("deployment", inherits = TRUE),          #shuusei20251213
+                                     need_last = need_last)                      #shuusei20251213
+  }                                                                               #shuusei20251213
+  
+  if (dep_exists && dep_valid && !isTRUE(reload_deployment)) {                   #shuusei20251213
+    cat("\nDeployment data is already loaded and valid. ",
+        "Set reload_deployment=TRUE to force rebuild.\n", sep = "")              #shuusei20251213
     
-    deploy_cache_path <- "Data/deployment_cache.rds"                                #shuusei20251212
-    ts_end_dep <- dmy("1nov2016")                                                   #shuusei20251212
-    need_last <- ts_end_dep %m+% months(1)                                          #shuusei20251212
-    loaded_cache <- FALSE                                                          #shuusei20251212
+  } else {                                                                        #shuusei20251213
     
-    if (file.exists(deploy_cache_path)) {                                          #shuusei20251212
-      dep_tmp <- readRDS(deploy_cache_path)                                        #shuusei20251212
-      if (is.data.frame(dep_tmp) && "time_series" %in% names(dep_tmp) &&           #shuusei20251212
-          max(dep_tmp$time_series, na.rm = TRUE) >= need_last) {                   #shuusei20251212
-        deployment <<- dep_tmp %>% filter(time_series <= need_last)                #shuusei20251212
-        loaded_cache <- TRUE                                                       #shuusei20251212
-      }                                                                            #shuusei20251212
-    }                                                                              #shuusei20251212
+    if (isTRUE(reload_deployment)) {                                             #shuusei20251213
+      cat("\n[load_data_f] reload_deployment=TRUE -> rebuilding deployment (ignore caches)\n") #shuusei20251213
+    } else if (dep_exists && !dep_valid) {                                        #shuusei20251213
+      cat("\n[load_data_f] existing `deployment` is invalid/outdated -> rebuilding\n")        #shuusei20251213
+    }                                                                             #shuusei20251213
     
-    if (!loaded_cache) {                                                           #shuusei20251212
-      all_inst_cap <- process_inst_data() %>%                                      #shuusei20251212
-        filter(installed_capacity <= 10, installationtype == "Domestic")           #shuusei20251212
+    loaded_cache <- FALSE                                                         #shuusei20251213
+    
+    if (!isTRUE(reload_deployment) && file.exists(deploy_cache_path)) {           #shuusei20251213
+      dep_tmp <- readRDS(deploy_cache_path)                                       #shuusei20251213
+      if (is_valid_deployment(dep_tmp, need_last = need_last)) {                  #shuusei20251213
+        deployment <<- dep_tmp %>% filter(time_series <= need_last)               #shuusei20251213
+        loaded_cache <- TRUE                                                      #shuusei20251213
+      }                                                                           #shuusei20251213
+    }                                                                             #shuusei20251213
+    
+    if (!loaded_cache) {                                                          #shuusei20251213
+      all_inst_cap <- process_inst_data(force = isTRUE(reload_deployment)) %>%    #shuusei20251213
+        filter(installed_capacity <= 10, installationtype == "Domestic")          #shuusei20251213
       
-      deployment <<- build_deployment_fast(all_inst_cap, ts_end = ts_end_dep)      #shuusei20251212
-      saveRDS(deployment, deploy_cache_path)                                       #shuusei20251212
-      rm(all_inst_cap)                                                            #shuusei20251212
-    }                                                                              #shuusei20251212
+      deployment <<- build_deployment_fast(all_inst_cap, ts_end = ts_end_dep)     #shuusei20251213
+      saveRDS(deployment, deploy_cache_path)                                      #shuusei20251213
+      rm(all_inst_cap)                                                           #shuusei20251213
+    }                                                                             #shuusei20251213
   }
   #---------------------------------------------------------#
   

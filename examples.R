@@ -232,4 +232,4 @@ ggplot() +
 
 
 ##################メモ
-
+load_data(reload_deployment = TRUE)
