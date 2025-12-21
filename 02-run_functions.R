@@ -18,7 +18,9 @@ batch_run_func <- function(number_of_agents,                                    
   if (missing(number_of_runs))  number_of_runs  <- 100                                   #shuusei202511288
   
   ## allowed_params_1000.txt を読み込み                                            #shuusei202511288
-  allowed_params <- read_tsv('Data/allowed_params_1000.txt', col_names = F)             #shuusei202511288
+  allowed_params <- read_tsv('Data/allowed_params_1000.txt',
+                             col_names = FALSE,
+                             show_col_types = FALSE)                     #shuusei20251213
   n_allowed <- nrow(allowed_params)                                                     #shuusei202511288
   
   ## パラメタの選び方：ランダム or 先頭から順番                                          #shuusei202511288
@@ -102,8 +104,11 @@ batch_run_func <- function(number_of_agents,                                    
             geom_line(data = cost_priv, aes(x = time_series, y = cum_cost, group = run_number), alpha = 0.2)+
             geom_line(data = avg_cost_priv, aes(x = time_series, y = cum_cost), color = "black", size = 1))
     
-    print(ggplot(LCOE_data) + theme_bw() + geom_point(aes(x=adopt_date, y = LCOE_ind, 
-                                                          group = run_number, color = run_number), alpha = 0.1))
+    print(ggplot(LCOE_data) + theme_bw() +
+            geom_point(aes(x = adopt_date, y = LCOE_ind,
+                           group = run_number, color = run_number),
+                       alpha = 0.1, na.rm = TRUE)                       #shuusei20251213
+    )
     
   }
   
@@ -181,16 +186,13 @@ batch_run_func <- function(number_of_agents,                                    
 
 run_model <- function(number_of_agents, rn, w, threshold) {
   
-  # Set up some parameters
-  
-  
   time_steps <- nrow(FiT) # number of months in time series
   
-  agents <- rerun(number_of_agents,                                     #shuusei2025120t5
-                  Household_Agent("N",                                  #shuusei20251205
-                                  assign_income("own"),                #shuusei20251205
-                                  "own",                               #shuusei20251205
-                                  assign_region()))                    #shuusei20251205
+  agents <- map(seq_len(number_of_agents), ~                             #shuusei20251213
+                  Household_Agent("N",                                   #shuusei20251205
+                                  assign_income("own"),                 #shuusei20251205
+                                  "own",                                #shuusei20251205
+                                  assign_region()))                     #shuusei20251205
   
   n_links <- 10                                                         #shuusei20251205
   
@@ -216,7 +218,7 @@ run_model <- function(number_of_agents, rn, w, threshold) {
   ## デシル別の平均 meet_demand を計算（roof_limit 正規化用）          #shuusei20251129
   compute_meet_demand_ref_by_decile(agents)                              #shuusei20251129
   
-  adopters <- agents[map_chr(agents, "status") == "Y"]                   #shuusei20251212
+  adopters <- agents[extract(agents, "status") == "Y"]                   #shuusei20251213
   
   if (length(adopters) > 0){
     n_owners <<- owner_occupiers[[1, 2]]

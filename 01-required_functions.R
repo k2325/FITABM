@@ -1254,9 +1254,12 @@ calc_LCOE <- function(adpts, rn, number_of_agents) {
     LCOE_weighted_scaled <- sum(adopt_costs$LCOE_ind*adopt_costs$weight_scaled)
   }
   else {
-    LCOE_weighted_scaled <- NA
-    adopt_costs <- data.frame(adopt_date = NA, LCOE_ind = NA, weight_scaled = NA,
-                              run_number = rn, output_scaled = NA)
+    LCOE_weighted_scaled <- NA_real_                                     #shuusei20251213
+    adopt_costs <- data.frame(adopt_date    = as.Date(NA),               #shuusei20251213
+                              LCOE_ind      = NA_real_,                 #shuusei20251213
+                              weight_scaled = NA_real_,                 #shuusei20251213
+                              run_number    = as.factor(rn),            #shuusei20251213
+                              output_scaled = NA_real_)                 #shuusei20251213
   }
   
   
@@ -1717,9 +1720,11 @@ load_plot_sim_data <- function(save_name, plot_u = T, plot_cost = T, plot_prod =
             geom_line(data = avg_cost_priv, aes(x = time_series, y = cum_cost/1e6), color = "black", size = 1)+
             ylab("Cumulative private cost (millions £)") + xlab("Date"))
     
-    print(ggplot(LCOE_data) + theme_bw() + geom_point(aes(x=adopt_date, y = LCOE_ind, 
-                                                          group = run_number), alpha = 0.1)+
-            ylab("LCOE (£/MWh)") + xlab("Date"))
+    print(ggplot(LCOE_data) + theme_bw() +
+            geom_point(aes(x = adopt_date, y = LCOE_ind,
+                           group = run_number),
+                       alpha = 0.1, na.rm = TRUE)                       #shuusei20251213
+          + ylab("LCOE (£/MWh)") + xlab("Date"))
     
   }
   
@@ -2144,19 +2149,16 @@ batch_run_func_gen <- function(w, t, number_of_agents, n_des, dev, agent_name) {
 }
 
 
-
 run_model_gen <- function(number_of_agents, rn, w, threshold, n_in, dev, agent_name) {
   
-  # Set up some parameters
+  time_steps <- nrow(FiT)
   
-  
-  time_steps <- nrow(FiT) # number of months in time series
-  
-  agents <- rerun(number_of_agents,                                     #shuusei2025120a5
-                  Household_Agent("N",                                  #shuusei20251205
-                                  assign_income("own"),                #shuusei20251205
-                                  "own",                               #shuusei20251205
-                                  assign_region()))                    #shuusei20251205
+  agents <- map(seq_len(number_of_agents), ~                             #shuusei20251213
+                  Household_Agent("N",                                   #shuusei20251205
+                                  assign_income("own"),                 #shuusei20251205
+                                  "own",                                #shuusei20251205
+                                  assign_region()))                     #shuusei20251205
+
   
   n_links <- 10                                                         #shuusei20251205
   
@@ -2379,9 +2381,12 @@ calc_LCOE_f <- function(adpts, rn, number_of_agents) {
     LCOE_weighted_scaled <- sum(adopt_costs$LCOE_ind*adopt_costs$weight_scaled)
   }
   else {
-    LCOE_weighted_scaled <- NA
-    adopt_costs <- data.frame(adopt_date = NA, LCOE_ind = NA, weight_scaled = NA,
-                              run_number = rn, output_scaled = NA)
+    LCOE_weighted_scaled <- NA_real_                                     #shuusei20251213
+    adopt_costs <- data.frame(adopt_date    = as.Date(NA),               #shuusei20251213
+                              LCOE_ind      = NA_real_,                 #shuusei20251213
+                              weight_scaled = NA_real_,                 #shuusei20251213
+                              run_number    = as.factor(rn),            #shuusei20251213
+                              output_scaled = NA_real_)                 #shuusei20251213
   }
   
   

@@ -30,6 +30,7 @@ rm(list = ls()); gc()
 source('01-required_functions.R')
 source('02-run_functions.R')
 load_data()
+#load_data(reload_deployment = TRUE)
 source("03-abc_quintile.R")
 
 # To run the simulation:
@@ -232,4 +233,4 @@ ggplot() +
 
 
 ##################メモ
-load_data(reload_deployment = TRUE)
+
