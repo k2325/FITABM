@@ -342,7 +342,14 @@ run_model <- function(number_of_agents, rn, w, threshold) {
                       share_large_dec10  = vector(length = time_steps)   #shuusei202511288
   )
   
-  
+  #---------------------------------------------------------#
+  # デシル別 utility（u_inc,u_soc,u_ec,u_cap,u_tot）の保存列を追加 #shuusei20251224
+  u_apps <- c("inc","soc","ec","cap","tot")                               #shuusei20251224
+  for (app in u_apps) {                                                  #shuusei20251224
+    for (d in 1:10) {                                                    #shuusei20251224
+      avg_u[[paste0("mean_u_", app, "_dec", d)]] <- rep(NA_real_, time_steps) #shuusei20251224
+    }                                                                    #shuusei20251224
+  }                                                                      #shuusei20251224
   #---------------------------------------------------------#
   
   # Time evolution! 
@@ -413,6 +420,13 @@ run_model <- function(number_of_agents, rn, w, threshold) {
     budget_vec <- extract(agents, "inst_cap_budget")                   #shuusei202511288
     roof_vec   <- extract(agents, "meet_demand")                       #shuusei20251130
     
+    # ★追加：utility をベクトルで取り出す（デシル平均に使う）          #shuusei20251224
+    u_inc_vec <- extract(agents, "u_inc")                               #shuusei20251224
+    u_soc_vec <- extract(agents, "u_soc")                               #shuusei20251224
+    u_ec_vec  <- extract(agents, "u_ec")                                #shuusei20251224
+    u_cap_vec <- extract(agents, "u_cap")                               #shuusei20251224
+    u_tot_vec <- extract(agents, "u_tot")                               #shuusei20251224
+    
     for (d in 1:10) {                                                  #shuusei20251121
       idx_all   <- which(deciles == d)                                 #shuusei20251121
       idx_adopt <- which(deciles == d & status)                        #shuusei20251121
@@ -421,9 +435,27 @@ run_model <- function(number_of_agents, rn, w, threshold) {
       if (length(idx_all) > 0) {                                       #shuusei20251121
         avg_u[i, paste0("frac_dec", d)] <-                             #shuusei20251121
           sum(status[idx_all]) / length(idx_all)                       #shuusei20251121
+        
+        # ★追加：デシル別 utility 平均（全世帯ベース）                #shuusei20251224
+        avg_u[i, paste0("mean_u_inc_dec", d)] <- mean(u_inc_vec[idx_all], na.rm = TRUE) #shuusei20251224
+        avg_u[i, paste0("mean_u_soc_dec", d)] <- mean(u_soc_vec[idx_all], na.rm = TRUE) #shuusei20251224
+        avg_u[i, paste0("mean_u_ec_dec",  d)] <- mean(u_ec_vec[idx_all],  na.rm = TRUE) #shuusei20251224
+        avg_u[i, paste0("mean_u_cap_dec", d)] <- mean(u_cap_vec[idx_all], na.rm = TRUE) #shuusei20251224
+        avg_u[i, paste0("mean_u_tot_dec", d)] <- mean(u_tot_vec[idx_all], na.rm = TRUE) #shuusei20251224
+        
       } else {                                                         #shuusei20251121
         avg_u[i, paste0("frac_dec", d)] <- NA                          #shuusei20251121
+        
+        # ★追加：デシルが空の時のガード                              #shuusei20251224
+        avg_u[i, paste0("mean_u_inc_dec", d)] <- NA_real_               #shuusei20251224
+        avg_u[i, paste0("mean_u_soc_dec", d)] <- NA_real_               #shuusei20251224
+        avg_u[i, paste0("mean_u_ec_dec",  d)] <- NA_real_               #shuusei20251224
+        avg_u[i, paste0("mean_u_cap_dec", d)] <- NA_real_               #shuusei20251224
+        avg_u[i, paste0("mean_u_tot_dec", d)] <- NA_real_               #shuusei20251224
       }                                                                #shuusei20251121
+      
+      
+      
       
       # そのデシルの「累積容量（MW）」と、制約・4kW選択・budget/roof 平均 #shuusei202511288
       if (length(idx_adopt) > 0) {                                     #shuusei20251121

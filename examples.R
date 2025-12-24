@@ -41,6 +41,9 @@ results_seq <- batch_run_func(number_of_runs    = 3,
                               use_random_params = FALSE,
                               save_name = "test")
 
+# run 平均（averages）にデシル別 utility が入っているのでプロット
+plot_utilities_by_decile(averages)
+
 
 
 

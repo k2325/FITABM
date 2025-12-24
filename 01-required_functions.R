@@ -904,7 +904,7 @@ calc_self_consumed_kwh <- function(C, G){                                #shuuse
 
 #tyousei
 assign_u_inc <- function(A, mean_inc) {
-  A$u_inc <- 1/(1+exp((mean_inc-A$income)*0.0002))
+  A$u_inc <- 1/(1+exp((mean_inc-A$income)*0.0000002))
   return(A)
 }
 
@@ -1509,7 +1509,11 @@ summarise_results <- function(avg_u, cost, cost_priv){
               share_large_dec7   = mean(share_large_dec7,   na.rm = TRUE), #shuusei202511288
               share_large_dec8   = mean(share_large_dec8,   na.rm = TRUE), #shuusei202511288
               share_large_dec9   = mean(share_large_dec9,   na.rm = TRUE), #shuusei202511288
-              share_large_dec10  = mean(share_large_dec10,  na.rm = TRUE)  #shuusei202511288
+              share_large_dec10  = mean(share_large_dec10,  na.rm = TRUE),  #shuusei202511288
+              # ★追加：デシル別 utility（run平均）を averages に入れる     #shuusei20251224
+              across(matches("^mean_u_(inc|soc|ec|cap|tot)_dec\\d+$"),      #shuusei20251224
+                     ~ mean(.x, na.rm = TRUE),                             #shuusei20251224
+                     .names = "{gsub('^mean_', '', .col)}")                #shuusei20251224
     )
   
   
@@ -1585,6 +1589,46 @@ plot_budget_roof_by_quintile <- function(cutoff_date = dmy("01oct2015")) { #shuu
   
   print(p)                                                               #shuusei202511288
 }                                                                        #shuusei202511288
+
+
+#---------------------------------------------------------# 
+# デシル別 utility の時間推移を描く（averages を想定）     #shuusei20251224
+#---------------------------------------------------------# 
+plot_utilities_by_decile <- function(df = NULL, deciles = 1:10) {        #shuusei20251224
+  if (is.null(df)) {                                                    #shuusei20251224
+    if (!exists("averages")) stop("averages が見つかりません。")         #shuusei20251224
+    df <- averages                                                      #shuusei20251224
+  }                                                                     #shuusei20251224
+  
+  u_vars <- c("inc","soc","ec","cap","tot")                              #shuusei20251224
+  yl <- c(expression(u[inc]), expression(u[soc]), expression(u[ec]),     #shuusei20251224
+          expression(u[cap]), expression(u[tot]))                        #shuusei20251224
+  
+  for (k in seq_along(u_vars)) {                                         #shuusei20251224
+    app <- u_vars[k]                                                     #shuusei20251224
+    cols <- paste0("u_", app, "_dec", deciles)                           #shuusei20251224
+    
+    if (!all(cols %in% names(df))) {                                     #shuusei20251224
+      missing_cols <- cols[!cols %in% names(df)]                         #shuusei20251224
+      stop("デシル別 utility 列が足りません: ", paste(missing_cols, collapse = ", ")) #shuusei20251224
+    }                                                                   #shuusei20251224
+    
+    long <- df %>%                                                      #shuusei20251224
+      select(time_series, all_of(cols)) %>%                             #shuusei20251224
+      pivot_longer(cols = all_of(cols),                                 #shuusei20251224
+                   names_to = "decile", values_to = "u") %>%            #shuusei20251224
+      mutate(decile = sub(paste0("^u_", app, "_dec"), "D", decile),      #shuusei20251224
+             decile = factor(decile, levels = paste0("D", deciles)))    #shuusei20251224
+    
+    p <- ggplot(long) + theme_bw() +                                    #shuusei20251224
+      geom_line(aes(x = time_series, y = u, color = decile)) +          #shuusei20251224
+      ylab(yl[k]) + xlab("Date") +                                      #shuusei20251224
+      ggtitle(paste0("Utility by income decile: u_", app))              #shuusei20251224
+    
+    print(p)                                                            #shuusei20251224
+  }                                                                     #shuusei20251224
+}                                                                        #shuusei20251224
+
 
 # inst_cap の制約要因と 4kW vs 大容量の選択を SES 五分位別に可視化する関数  #shuusei202511288
 plot_cap_constraints_by_quintile <- function(cutoff_date = dmy("01oct2015")) { #shuusei202511288
