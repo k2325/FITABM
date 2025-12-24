@@ -212,10 +212,8 @@ run_model <- function(number_of_agents, rn, w, threshold) {
     map(assign_elec_cons) %>%                                           #shuusei20251205
     map(assign_u_inc, mean_inc = mean_income)                           #shuusei20251205
   
-  agents <- assign_smallworld_network(agents,                           #shuusei20251205
-                                      k = n_links,                      #shuusei20251205
-                                      alpha = 0.05,                     #shuusei20251205
-                                      p_rewire = 0.1)                   #shuusei20251205
+  # 地域ごとのランダムネットワーク（同一地域内で各世帯 n_links 本）       #shuusei20251224
+  agents <- assign_region_random_network(agents, n_links = n_links)      #shuusei20251224
   
   
   # 所得デシル（1〜10）を各エージェントに付与                      #shuusei20251118

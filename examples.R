@@ -42,6 +42,88 @@ results_seq <- batch_run_func(number_of_runs    = 3,
                               save_name = "test")
 
 
+
+
+#==================== 数値出力（全体累積 & クインタイル別）====================#shuusei20251224
+if (!exists("averages", inherits = TRUE)) stop("averages がありません。batch_run_func() か load_plot_sim_data() の後に置いてください。") #shuusei20251224
+if (!exists("deployment", inherits = TRUE)) stop("deployment がありません。load_data() の後に置いてください。") #shuusei20251224
+
+#--- 1) 全体：累積導入量（MW）と「前年差分（=月次増分MW）」を出力 ---#shuusei20251224
+overall_out <- averages %>%                                                                 #shuusei20251224
+  dplyr::select(time_series, model_cum_MW = tot_inst_cap) %>%                               #shuusei20251224
+  dplyr::left_join(deployment %>% dplyr::select(time_series, real_cum_MW = real_cap),       #shuusei20251224
+                   by = "time_series") %>%                                                 #shuusei20251224
+  dplyr::mutate(model_add_MW = model_cum_MW - dplyr::lag(model_cum_MW),                     #shuusei20251224
+                real_add_MW  = real_cum_MW  - dplyr::lag(real_cum_MW),                      #shuusei20251224
+                model_minus_real_MW = model_cum_MW - real_cum_MW)                           #shuusei20251224
+
+cat("\n[Overall cumulative deployment (MW) & monthly change]\n")                             #shuusei20251224
+print(overall_out, n = Inf)                                                                 #shuusei20251224
+
+#--- 2) クインタイル別：累積導入量（MW）と「前年差分（=月次増分MW）」を出力 ---#shuusei20251224
+cap_dec_vars <- paste0("cap_dec", 1:10)                                                     #shuusei20251224
+if (!all(cap_dec_vars %in% names(averages))) {                                              #shuusei20251224
+  cat("\n[INFO] cap_dec1〜cap_dec10 が averages に無いので、クインタイル別容量は出力できません。\n") #shuusei20251224
+} else {                                                                                    #shuusei20251224
+  cap_mat   <- as.matrix(averages[, cap_dec_vars])                                           #shuusei20251224
+  cap_Q_mat <- t(apply(cap_mat, 1, calc_quintile_cap))                                       #shuusei20251224
+  cap_Q_out <- dplyr::as_tibble(cap_Q_mat) %>%                                               #shuusei20251224
+    dplyr::mutate(time_series = averages$time_series, .before = 1) %>%                       #shuusei20251224
+    dplyr::mutate(dplyr::across(dplyr::starts_with("Q"), as.numeric),                        #shuusei20251224
+                  dplyr::across(dplyr::starts_with("Q"), ~ .x - dplyr::lag(.x),              #shuusei20251224
+                                .names = "{.col}_add_MW"))                                   #shuusei20251224
+  
+  cat("\n[Quintile cumulative deployment (MW) & monthly change]\n")                           #shuusei20251224
+  print(cap_Q_out, n = Inf)                                                                  #shuusei20251224
+}                                                                                            #shuusei20251224
+#===============================================================================#shuusei20251224
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## === [console出力] 累積導入量（全体＆クインタイル） =============== #shuusei20251224
 stopifnot(exists("averages", inherits = TRUE), exists("deployment", inherits = TRUE)) #shuusei20251224
 
@@ -264,4 +346,30 @@ ggplot() +
 
 
 ##################メモ
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

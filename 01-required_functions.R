@@ -755,140 +755,41 @@ assign_soc_network <- function(A, n_ag, n_l) {
   return(A)
 }
 
-# small‑world ネットワークのフォールバック監視用カウンタ           #shuusei20251206
-sw_debug <<- list(                                                     #shuusei20251206
-  total_calls      = 0L,                                               #shuusei20251206
-  fallback_stage1  = 0L,  # w 全部 NA/0 で一様にした回数              #shuusei20251206
-  fallback_stage2  = 0L   # 最終チェックで一様サンプルに落とした回数  #shuusei20251206
-)                                                                      #shuusei20251206
-
-# 所得×地域に依存した small‑world ネットワークを構成                #shuusei20251205
-assign_smallworld_network <- function(agents,
-                                      k       = 10,                    #shuusei20251205
-                                      alpha   = 0.05,                  #shuusei20251205
-                                      p_rewire = 0.1){                 #shuusei20251205
-  n <- length(agents)                                                   #shuusei20251205
-  if (n <= 1L) return(agents)                                           #shuusei20251205
+# 地域ごとのランダムネットワーク（同一地域内で各世帯 n_links 本） #shuusei20251224
+assign_region_random_network <- function(agents, n_links = 10L) {        #shuusei20251224
+  n <- length(agents)                                                    #shuusei20251224
+  if (n <= 1L) {                                                         #shuusei20251224
+    if (n == 1L) agents[[1]]$network <- integer(0)                       #shuusei20251224
+    return(agents)                                                       #shuusei20251224
+  }                                                                      #shuusei20251224
   
-  incomes <- extract(agents, "income")                                  #shuusei20251205
-  regions <- extract(agents, "region")                                  #shuusei20251205
+  regions <- extract(agents, "region")                                   #shuusei20251224
+  regions <- as.character(regions)                                       #shuusei20251224
   
-  neighbours <- vector("list", n)                                       #shuusei20251205
+  idx_by_region <- split(seq_len(n), regions)                            #shuusei20251224
   
-  regs <- unique(regions)                                               #shuusei20251205
-  for (r in regs){                                                      #shuusei20251205
-    idx_r <- which(regions == r)                                        #shuusei20251205
-    N_r   <- length(idx_r)                                              #shuusei20251205
-    if (N_r <= 1L) next                                                 #shuusei20251205
+  for (r in names(idx_by_region)) {                                      #shuusei20251224
+    idx_r <- idx_by_region[[r]]                                          #shuusei20251224
+    N_r  <- length(idx_r)                                                #shuusei20251224
+    if (N_r <= 1L) {                                                     #shuusei20251224
+      i <- idx_r[1]                                                      #shuusei20251224
+      agents[[i]]$network <- integer(0)                                  #shuusei20251224
+      next                                                               #shuusei20251224
+    }                                                                    #shuusei20251224
     
-    inc_r <- incomes[idx_r]                                             #shuusei20251205
-    ord_local <- order(inc_r, na.last = NA)                             #shuusei20251205
-    ord      <- idx_r[ord_local]                                        #shuusei20251205
-    N_eff    <- length(ord)                                             #shuusei20251205
-    if (N_eff <= 1L) next                                               #shuusei20251205
-    
-    y_r   <- incomes[ord]                                               #shuusei20251205
-    med_y <- median(y_r, na.rm = TRUE)                                  #shuusei20251205
-    diffs <- abs(y_r - med_y)                                           #shuusei20251205
-    tau_r <- median(diffs, na.rm = TRUE)                                #shuusei20251205
-    if (is.na(tau_r) || tau_r <= 0) {                                   #shuusei20251205
-      tau_r <- sd(y_r, na.rm = TRUE)                                    #shuusei20251205
-      if (is.na(tau_r) || tau_r <= 0) tau_r <- 1                        #shuusei20251205
-    }                                                                   #shuusei20251205
-    
-    width <- max(1L, ceiling(alpha * N_eff))                            #shuusei20251205
-    
-    for (pos in seq_len(N_eff)){                                        #shuusei20251205
-      i <- ord[pos]                                                     #shuusei20251205
-      pos_min <- max(1L, pos - width)                                   #shuusei20251205
-      pos_max <- min(N_eff, pos + width)                                #shuusei20251205
-      cand_pos <- setdiff(pos_min:pos_max, pos)                         #shuusei20251205
-      if (length(cand_pos) == 0L) next                                  #shuusei20251205
-      cand_idx <- ord[cand_pos]                                         #shuusei20251205
-      
-      d <- abs(incomes[i] - incomes[cand_idx])                          #shuusei20251205
-      w <- exp(-d / tau_r)                                              #shuusei20251205
-      
-      sw_debug$total_calls <<- sw_debug$total_calls + 1L                #shuusei20251206
-      
-      # w が全部 NA / 0 なら一様分布にする                              #shuusei20251206
-      if (!any(is.finite(w)) || sum(w, na.rm = TRUE) <= 0) {            #shuusei20251206
-        sw_debug$fallback_stage1 <<- sw_debug$fallback_stage1 + 1L      #shuusei20251206
-        w <- rep(1, length(cand_idx))                                   #shuusei20251206
-      }                                                                 #shuusei20251206
-      
-      deg_i <- length(neighbours[[i]])                                  #shuusei20251205
-      n_add <- max(0L, k - deg_i)                                       #shuusei20251205
-      if (n_add <= 0L) next                                             #shuusei20251205
-      n_add <- min(n_add, length(cand_idx))                             #shuusei20251205
-      
-      ## ★候補が 1 つだけのときは sample() を使わない                     #shuusei20251206
-      if (length(cand_idx) == 1L) {                                     #shuusei20251206
-        sel <- cand_idx                                                 #shuusei20251206
-      } else {                                                          #shuusei20251206
-        ## sample() に渡す前の最終チェック                                 #shuusei20251206
-        w <- as.numeric(w)                                              #shuusei20251206
-        if (length(w) != length(cand_idx) ||                            #shuusei20251206
-            any(!is.finite(w)) ||                                       #shuusei20251206
-            sum(w) <= 0) {                                              #shuusei20251206
-          sw_debug$fallback_stage2 <<- sw_debug$fallback_stage2 + 1L    #shuusei20251206
-          # 何かおかしければ確率なし（＝一様）でサンプル                  #shuusei20251206
-          sel <- sample(cand_idx, size = n_add, replace = FALSE)        #shuusei20251206
-        } else {                                                        #shuusei20251206
-          w <- w / sum(w)                                               #shuusei20251206
-          sel <- sample(cand_idx, size = n_add, replace = FALSE, prob = w) #shuusei20251206
-        }                                                               #shuusei20251206
-      }                                                                 #shuusei20251206
-      
-      for (j in sel){                                                   #shuusei20251205
-        if (i == j) next                                                #shuusei20251205
-        if (is.null(neighbours[[i]])) neighbours[[i]] <- integer(0)     #shuusei20251205
-        if (is.null(neighbours[[j]])) neighbours[[j]] <- integer(0)     #shuusei20251205
-        if (!(j %in% neighbours[[i]])) neighbours[[i]] <- c(neighbours[[i]], j) #shuusei20251205
-        if (!(i %in% neighbours[[j]])) neighbours[[j]] <- c(neighbours[[j]], i) #shuusei20251205
-      }                                                                 #shuusei20251205
-    }                                                                   #shuusei20251205
-  }
+    for (i in idx_r) {                                                   #shuusei20251224
+      cand  <- idx_r[idx_r != i]                                         #shuusei20251224
+      n_sel <- min(as.integer(n_links), length(cand))                    #shuusei20251224
+      if (n_sel <= 0L) {                                                 #shuusei20251224
+        agents[[i]]$network <- integer(0)                                #shuusei20251224
+      } else {                                                           #shuusei20251224
+        agents[[i]]$network <- sample(cand, size = n_sel, replace = FALSE) #shuusei20251224
+      }                                                                  #shuusei20251224
+    }                                                                    #shuusei20251224
+  }                                                                      #shuusei20251224
   
-  ## Watts–Strogatz 型のランダム再配線（ここから下は変更なし）           #shuusei20251205
-  if (p_rewire > 0){                                                    #shuusei20251205
-    edges <- list()                                                     #shuusei20251205
-    for (i in seq_len(n)){                                              #shuusei20251205
-      if (length(neighbours[[i]]) == 0) next                            #shuusei20251205
-      for (j in neighbours[[i]]){                                       #shuusei20251205
-        if (i < j) edges[[length(edges) + 1L]] <- c(i, j)               #shuusei20251205
-      }                                                                 #shuusei20251205
-    }                                                                   #shuusei20251205
-    if (length(edges) > 0){                                             #shuusei20251205
-      edges_mat <- do.call(rbind, edges)                                #shuusei20251205
-      n_edges   <- nrow(edges_mat)                                      #shuusei20251205
-      for (e_idx in seq_len(n_edges)){                                  #shuusei20251205
-        i <- edges_mat[e_idx, 1]                                        #shuusei20251205
-        j <- edges_mat[e_idx, 2]                                        #shuusei20251205
-        if (runif(1) < p_rewire){                                       #shuusei20251205
-          neighbours[[i]] <- setdiff(neighbours[[i]], j)                #shuusei20251205
-          neighbours[[j]] <- setdiff(neighbours[[j]], i)                #shuusei20251205
-          if (n > 2){                                                   #shuusei20251205
-            repeat{                                                     #shuusei20251205
-              new_j <- sample.int(n, 1)                                 #shuusei20251205
-              if (new_j != i && !(new_j %in% neighbours[[i]])) break    #shuusei20251205
-            }                                                           #shuusei20251205
-            if (is.null(neighbours[[new_j]])) neighbours[[new_j]] <- integer(0) #shuusei20251205
-            neighbours[[i]]      <- c(neighbours[[i]], new_j)           #shuusei20251205
-            neighbours[[new_j]]  <- c(neighbours[[new_j]], i)           #shuusei20251205
-          }                                                             #shuusei20251205
-        }                                                               #shuusei20251205
-      }                                                                 #shuusei20251205
-    }                                                                   #shuusei20251205
-  }                                                                     #shuusei20251205
-  
-  for (i in seq_len(n)){                                                #shuusei20251205
-    if (is.null(neighbours[[i]])) neighbours[[i]] <- integer(0)         #shuusei20251205
-    agents[[i]]$network <- neighbours[[i]]                              #shuusei20251205
-  }                                                                     #shuusei20251205
-  
-  agents                                                                #shuusei20251205
-}
+  return(agents)                                                         #shuusei20251224
+}                                                                        #shuusei20251224
 
 assign_LF <- function(A) {
   A$LF <- LF$LF[which(LF$Label == A$region)]/100
@@ -2334,11 +2235,8 @@ run_model_gen <- function(number_of_agents, rn, w, threshold, n_in, dev, agent_n
     map(assign_elec_cons) %>%                                           #shuusei20251205
     map(assign_u_inc, mean_inc = mean_income)                           #shuusei2025120
   
-  # 所得×地域ベースの small‑world ネットワークを構築                    #shuusei20251205
-  agents <- assign_smallworld_network(agents,                           #shuusei20251205
-                                      k = n_links,                      #shuusei20251205
-                                      alpha = 0.05,                     #shuusei20251205
-                                      p_rewire = 0.1)                   #shuusei20251205
+  # 地域ごとのランダムネットワーク（同一地域内で各世帯 n_links 本）       #shuusei20251224
+  agents <- assign_region_random_network(agents, n_links = n_links)      #shuusei20251224
   
   
   # Create agents: all non-adopters, assign income, size and region randomly weighted by real data
