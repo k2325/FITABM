@@ -95,9 +95,16 @@ load_data <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, in
   if (!exists("tenure_region_counts", inherits = TRUE)) {               #shuusei20251205
     init_tenure_region_counts()                                         #shuusei20251205
   }                                                                      #shuusei20251205
+  
   owner_region_weights <- tenure_region_counts$own /                    #shuusei20251205
     sum(tenure_region_counts$own)                                       #shuusei20251205
   region_weights <<- owner_region_weights                                #shuusei20251205
+  
+  # Rooftop PV: house-type share & physical cap tables を読み込む         #shuusei20251224
+  if (!exists("hh_type_share_lut", inherits = TRUE) ||                  #shuusei20251224
+      !exists("pv_cap_type_year",  inherits = TRUE)) {                  #shuusei20251224
+    init_rooftop_pv_physical_inputs()                                   #shuusei20251224
+  }                                                                     #shuusei20251224
   
   rm(population)                                                         #shuusei20251205
   
@@ -268,6 +275,173 @@ init_tenure_region_counts <- function(){                                #shuusei
   total_soc  <<- sum(tenure_region_counts$soc)                          #shuusei20251205
   total_priv <<- sum(tenure_region_counts$priv)                         #shuusei20251205
 }                                                                       #shuusei20251205
+
+
+if (FALSE) {                                                           #shuusei20251224
+  if (!exists("tenure_region_counts", inherits = TRUE)) {               #shuusei20251205
+    init_tenure_region_counts()                                         #shuusei20251205
+  }                                                                      #shuusei20251205
+  owner_region_weights <- tenure_region_counts$own /                    #shuusei20251205
+    sum(tenure_region_counts$own)                                       #shuusei20251205
+  region_weights <<- owner_region_weights                               #shuusei20251205
+  
+  # Rooftop PV: house-type share & physical cap tables を読み込む         #shuusei20251223
+  if (!exists("hh_type_share_lut", inherits = TRUE) ||                  #shuusei20251223
+      !exists("pv_cap_type_year",  inherits = TRUE)) {                  #shuusei20251223
+    init_rooftop_pv_physical_inputs()                                   #shuusei20251223
+  }                                                                     #shuusei20251223
+  
+  rm(population)                                                       #shuusei20251205
+}                                                                       #shuusei20251224
+
+#---------------------------------------------------------# #shuusei20251223
+# Rooftop PV physical potential (region×income quintile→house type, house type×year→kW) #shuusei20251223
+#---------------------------------------------------------# #shuusei20251223
+
+init_rooftop_pv_physical_inputs <- function(                                   #shuusei20251223
+  share_path = "Data/house_type_share_owner_region_quintile.csv",              #shuusei20251223
+  cap_path   = "Data/pv_physical_cap_by_house_type_year.csv"                   #shuusei20251223
+){                                                                             #shuusei20251223
+  if (!exists("tenure_region_counts", inherits = TRUE)) {                      #shuusei20251223
+    init_tenure_region_counts()                                                #shuusei20251223
+  }                                                                            #shuusei20251223
+  
+  if (!file.exists(share_path)) stop("house type share file not found: ", share_path)  #shuusei20251223
+  if (!file.exists(cap_path))   stop("PV physical cap file not found: ", cap_path)    #shuusei20251223
+  
+  region_lut <- tenure_region_counts %>%                                       #shuusei20251223
+    dplyr::select(region_name, code)                                           #shuusei20251223
+  
+  # 1) 住宅タイプ割合（region_name, hhinc5x, Detached/Semi/Terraced/Flat）       #shuusei20251223
+  hh_share <- read_csv(share_path, col_types = cols()) %>%                     #shuusei20251223
+    dplyr::rename(region_name = region) %>%                                    #shuusei20251223
+    dplyr::left_join(region_lut, by = "region_name") %>%                       #shuusei20251223
+    dplyr::rename(region_code = code)                                          #shuusei20251223
+  
+  if (any(is.na(hh_share$region_code))) {                                      #shuusei20251223
+    bad <- unique(hh_share$region_name[is.na(hh_share$region_code)])           #shuusei20251223
+    stop("Unknown region_name in share table: ", paste(bad, collapse = ", "))  #shuusei20251223
+  }                                                                            #shuusei20251223
+  
+  type_cols <- c("Detached","Semi","Terraced","Flat")                          #shuusei20251223
+  # 念のため、行ごとに確率を正規化（合計=1）                                   #shuusei20251223
+  hh_share <- hh_share %>%                                                     #shuusei20251223
+    rowwise() %>%                                                              #shuusei20251223
+    mutate(.sum_p = sum(c_across(all_of(type_cols)), na.rm = TRUE),            #shuusei20251223
+           across(all_of(type_cols), ~ ifelse(.sum_p > 0, .x/.sum_p, NA_real_))) %>% #shuusei20251223
+    ungroup() %>%                                                              #shuusei20251223
+    select(region_code, region_name, hhinc5x, all_of(type_cols))               #shuusei20251223
+  
+  hh_type_share_lut <<- hh_share                                               #shuusei20251223
+  
+  # 2) 住宅タイプ×年の物理導入可能容量（kW）                                   #shuusei20251223
+  pv_cap <- read_csv(cap_path, col_types = cols())                             #shuusei20251223
+  if (!("year" %in% names(pv_cap))) names(pv_cap)[1] <- "year"                 #shuusei20251223
+  
+  pv_cap <- pv_cap %>%                                                         #shuusei20251223
+    mutate(year = as.integer(year)) %>%                                        #shuusei20251223
+    dplyr::select(year, all_of(type_cols))                                     #shuusei20251223
+  
+  pv_cap_type_year <<- pv_cap                                                  #shuusei20251223
+  
+  PV_POLICY_CAP_KW <<- 4                                                       #shuusei20251223
+}                                                                              #shuusei20251223
+
+
+assign_income_quintile_by_region <- function(agents){                           #shuusei20251223
+  # agents: Household list                                                    #shuusei20251223
+  idx    <- seq_along(agents)                                                  #shuusei20251223
+  region <- extract(agents, "region")                                          #shuusei20251223
+  income <- extract(agents, "income")                                          #shuusei20251223
+  
+  df <- tibble(idx = idx, region = region, income = income) %>%                #shuusei20251223
+    group_by(region) %>%                                                       #shuusei20251223
+    mutate(inc_quintile_reg = dplyr::ntile(income, 5),                         #shuusei20251223
+           hhinc5x = paste0("Q", inc_quintile_reg)) %>%                        #shuusei20251223
+    ungroup()                                                                  #shuusei20251223
+  
+  for (i in seq_len(nrow(df))) {                                               #shuusei20251223
+    agents[[df$idx[i]]]$inc_quintile_reg <- df$inc_quintile_reg[i]             #shuusei20251223
+    agents[[df$idx[i]]]$hhinc5x           <- df$hhinc5x[i]                     #shuusei20251223
+  }                                                                            #shuusei20251223
+  return(agents)                                                               #shuusei20251223
+}                                                                              #shuusei20251223
+
+
+assign_dwelling_type_from_share <- function(agents, overwrite = FALSE){         #shuusei20251223
+  if (!exists("hh_type_share_lut", inherits = TRUE)) {                         #shuusei20251223
+    stop("hh_type_share_lut not found. Run init_rooftop_pv_physical_inputs() first.") #shuusei20251223
+  }                                                                            #shuusei20251223
+  
+  types <- c("Detached","Semi","Terraced","Flat")                              #shuusei20251223
+  
+  for (i in seq_along(agents)) {                                               #shuusei20251223
+    A <- agents[[i]]                                                           #shuusei20251223
+    
+    if (!overwrite && !is.null(A$dwelling_type) && !is.na(A$dwelling_type)) {  #shuusei20251223
+      next                                                                     #shuusei20251223
+    }                                                                          #shuusei20251223
+    
+    reg_code <- as.character(A$region)                                         #shuusei20251223
+    qlab <- if (!is.null(A$hhinc5x) && !is.na(A$hhinc5x)) A$hhinc5x else paste0("Q", A$inc_quintile_reg) #shuusei20251223
+    
+    row <- hh_type_share_lut %>%                                               #shuusei20251223
+      filter(region_code == reg_code, hhinc5x == qlab)                         #shuusei20251223
+    
+    if (nrow(row) != 1) {                                                      #shuusei20251223
+      # 例外時は「その地域の平均シェア」にフォールバック                   #shuusei20251223
+      row <- hh_type_share_lut %>%                                             #shuusei20251223
+        filter(region_code == reg_code) %>%                                    #shuusei20251223
+        summarise(across(all_of(types), mean, na.rm = TRUE))                   #shuusei20251223
+    }                                                                          #shuusei20251223
+    
+    probs <- as.numeric(row[1, types])                                         #shuusei20251223
+    probs[!is.finite(probs)] <- 0                                              #shuusei20251223
+    if (sum(probs) <= 0) probs <- rep(1, length(types))                        #shuusei20251223
+    probs <- probs / sum(probs)                                                #shuusei20251223
+    
+    A$dwelling_type <- sample(types, size = 1, prob = probs)                   #shuusei20251223
+    agents[[i]] <- A                                                           #shuusei20251223
+  }                                                                            #shuusei20251223
+  
+  return(agents)                                                               #shuusei20251223
+}                                                                              #shuusei20251223
+
+
+lookup_pv_physical_cap_kw <- function(dwelling_type, date_or_year){            #shuusei20251223
+  if (!exists("pv_cap_type_year", inherits = TRUE)) {                          #shuusei20251223
+    stop("pv_cap_type_year not found. Run init_rooftop_pv_physical_inputs() first.") #shuusei20251223
+  }                                                                            #shuusei20251223
+  if (is.null(dwelling_type) || is.na(dwelling_type)) return(NA_real_)         #shuusei20251223
+  
+  yr <- date_or_year                                                          #shuusei20251223
+  if (inherits(date_or_year, "Date")) yr <- lubridate::year(date_or_year)      #shuusei20251223
+  yr <- as.integer(yr)                                                        #shuusei20251223
+  
+  yr_min <- min(pv_cap_type_year$year, na.rm = TRUE)                           #shuusei20251223
+  yr_max <- max(pv_cap_type_year$year, na.rm = TRUE)                           #shuusei20251223
+  if (!is.finite(yr)) return(NA_real_)                                         #shuusei20251223
+  yr <- max(yr_min, min(yr_max, yr))                                           #shuusei20251223
+  
+  row <- pv_cap_type_year[pv_cap_type_year$year == yr, , drop = FALSE]         #shuusei20251223
+  if (nrow(row) != 1) return(NA_real_)                                         #shuusei20251223
+  
+  if (!(dwelling_type %in% names(row))) return(NA_real_)                       #shuusei20251223
+  return(as.numeric(row[[dwelling_type]][1]))                                  #shuusei20251223
+}                                                                              #shuusei20251223
+
+
+ensure_rooftop_pv_agent_attrs <- function(agents, overwrite_dwelling_type = FALSE){ #shuusei20251223
+  # 1) 地域内所得クインタイル付与                                          #shuusei20251223
+  agents <- assign_income_quintile_by_region(agents)                           #shuusei20251223
+  # 2) 住宅タイプ付与（シェアに従ってサンプル）                              #shuusei20251223
+  agents <- assign_dwelling_type_from_share(agents, overwrite = overwrite_dwelling_type) #shuusei20251223
+  return(agents)                                                               #shuusei20251223
+}                                                                              #shuusei20251223
+
+
+
+
 
 process_inst_data <- function(cache_path = "Data/cache_process_inst_data_pv.rds",  #shuusei20251212
                               force = FALSE){                                     #shuusei20251212
@@ -478,6 +652,27 @@ extract <- function(x, str) { # x is adopters or agents (a list of Household obj
   
   # factor を文字に戻す（"Y"/"N" が "1"/"2" になって比較不能になるのを防ぐ） #shuusei20251213
   vals <- lapply(vals, function(v) if (is.factor(v)) as.character(v) else v)      #shuusei20251213
+  
+  # NULL を NA に置換して「長さを維持」する（古い agents.rds 互換・集計ズレ防止） #shuusei20251224
+  proto <- NULL                                                                   #shuusei20251224
+  for (v in vals) {                                                               #shuusei20251224
+    if (!is.null(v)) { proto <- v; break }                                        #shuusei20251224
+  }                                                                               #shuusei20251224
+  na_proto <- NA                                                                  #shuusei20251224
+  if (!is.null(proto)) {                                                         #shuusei20251224
+    if (inherits(proto, "Date")) {                                               #shuusei20251224
+      na_proto <- as.Date(NA)                                                    #shuusei20251224
+    } else if (is.character(proto)) {                                            #shuusei20251224
+      na_proto <- NA_character_                                                  #shuusei20251224
+    } else if (is.integer(proto)) {                                              #shuusei20251224
+      na_proto <- NA_integer_                                                    #shuusei20251224
+    } else if (is.numeric(proto)) {                                              #shuusei20251224
+      na_proto <- NA_real_                                                       #shuusei20251224
+    } else if (is.logical(proto)) {                                              #shuusei20251224
+      na_proto <- NA                                                             #shuusei20251224
+    }                                                                            #shuusei20251224
+  }                                                                              #shuusei20251224
+  vals <- lapply(vals, function(v) if (is.null(v)) na_proto else v)              #shuusei20251224
   
   out <- do.call(c, vals)                                                         #shuusei20251213
   unname(out)                                                                     #shuusei20251213
@@ -889,93 +1084,49 @@ get_budget_share_by_decile <- function(dec) {                           #shuusei
 }                                                                       #shuusei202511299
 
 assign_inst_cap <- function(A) {
-  if (A$status == "N") { # otherwise agents who have already adopted can change inst_cap!
-    ## 予算ベースの容量（所得クインタイル別シェア）                     #shuusei20251129
-    share_Q <- get_budget_share_by_decile(A$inc_decile)                      #shuusei20251129
-    
-    budget_total <- share_Q * A$income                                       #shuusei20251212
-    
-    ## 予算 >= fixed + marginal*cap  => cap <= (budget - fixed)/marginal     #shuusei20251212
-    inst_cap_budget <- (budget_total - fixed_current) / marginal_current     #shuusei20251212
-    if (!is.finite(inst_cap_budget) || inst_cap_budget < 0) inst_cap_budget <- 0 #shuusei20251212
-    
-    ## 需要ベースの容量（診断用 & 正規化用）                            #shuusei20251129
-    meet_demand <- A$consumption/(A$LF*24*365)                          #shuusei20251129
-    A$meet_demand <- meet_demand                                        #shuusei20251130
-    ## デフォルトは従来どおり「meet_demand 上限」                      #shuusei20251129
-    roof_limit <- meet_demand                                           #shuusei20251129
-    
-    ## 所得デシルが付いている場合：                                   #shuusei20251129
-    ##  base_roof(dec) × meet_demand / mean_meet_demand_dec             #shuusei20251129
-    if (!is.null(A$inc_decile) && !is.na(A$inc_decile)) {               #shuusei20251129
-      base_roof <- get_roof_limit_by_decile(A$inc_decile)              #shuusei20251129
-      
-      scale_fac <- 1                                                    #shuusei20251129
-      if (exists("meet_dmd_ref_dec", inherits = TRUE)) {                #shuusei20251129
-        md_ref <- meet_dmd_ref_dec[A$inc_decile]                        #shuusei20251129
-        if (!is.na(md_ref) && md_ref > 0) {                             #shuusei20251129
-          scale_fac <- meet_demand / md_ref                             #shuusei20251129
-        }                                                               #shuusei20251129
-      }                                                                 #shuusei20251129
-      
-      roof_limit <- base_roof * scale_fac                               #shuusei20251129
-    }                                                                   #shuusei20251129
-    
-    ## raw の容量（4kW/10kW 調整の前）                                 #shuusei20251130
-    ## ⇒ inst_cap_raw = min(inst_cap_budget, meet_demand)               #shuusei20251130
-    inst_cap_raw <- min(inst_cap_budget, meet_demand)                   #shuusei20251130
-    
-    ## raw 容量と制約要因をエージェントに記録                          #shuusei202511288
-    A$inst_cap_budget <- inst_cap_budget                                #shuusei202511288
-    A$roof_limit      <- roof_limit                                     #shuusei202511288
-    A$inst_cap_raw    <- inst_cap_raw                                   #shuusei202511288
-    
-    ## inst_cap_raw を決めた制約（budget / meet / tie）を記録          #shuusei20251130
-    if (is.na(inst_cap_raw)) {                                          #shuusei20251130
-      A$cap_raw_source <- NA_character_                                 #shuusei20251130
-    } else if (inst_cap_raw <= inst_cap_budget + 1e-6 &&                #shuusei20251130
-               inst_cap_raw <  meet_demand  - 1e-6) {                   #shuusei20251130
-      A$cap_raw_source <- "budget"                                      #shuusei20251130
-    } else if (inst_cap_raw <= meet_demand + 1e-6 &&                    #shuusei20251130
-               inst_cap_raw <  inst_cap_budget - 1e-6) {                #shuusei20251130
-      A$cap_raw_source <- "meet"                                        #shuusei20251130
-    } else {                                                            #shuusei20251130
-      A$cap_raw_source <- "tie"                                         #shuusei20251130
-    }                                                                   #shuusei20251130
-    
-    ## 4kW vs 大容量の選択結果（デフォルト: 選択なし）                 #shuusei202511288
-    A$cap_choice_type <- "no_choice"                                    #shuusei202511288
-    
-    ## まず raw 容量をそのまま入れる                                   #shuusei202511288
-    A$inst_cap <- inst_cap_raw                                          #shuusei202511288
-    
-    ## 4kW を選ぶか、大容量を選ぶかの判定                             #shuusei202511288
-    if (inst_cap_raw > 4) {   # would they be better off going for the lower investment? #shuusei202511288
-      ret_large <- annual_return(A)                                     #shuusei202511288
-      large_cap <- A$inst_cap                                           #shuusei202511288
-      A$inst_cap <- 4                                                   #shuusei202511288
-      ret_small <- annual_return(A)                                     #shuusei202511288
-      
-      if (ret_small > ret_large) {                                      #shuusei202511288
-        A$inst_cap <- 4                                                 #shuusei202511288
-        A$cap_choice_type <- "choose_4"                                 #shuusei202511288
-      } else {                                                          #shuusei202511288
-        A$inst_cap <- large_cap                                         #shuusei202511288
-        A$cap_choice_type <- "choose_large"                             #shuusei202511288
-      }                                                                 #shuusei202511288
-      
-      ## 10kW の上限でトランケート                                    #shuusei202511288
-      if (A$inst_cap > 10) {                                            #shuusei202511288
-        A$inst_cap <- 10                                                #shuusei202511288
-        if (A$cap_choice_type == "choose_large") {                      #shuusei202511288
-          A$cap_choice_type <- "choose_large_trunc10"                   #shuusei202511288
-        }                                                               #shuusei202511288
-      }                                                                 #shuusei202511288
-    }                                                                   #shuusei202511288
-  }
+  
+  # すでに導入済み (Y) の世帯は容量を変えない（固定）
+  if (as.character(A$status[1]) != "N") return(A)
+  
+  # 念のため：PV_POLICY_CAP_KW が無い場合は 4kW 扱い
+  policy_cap_kw <- if (exists("PV_POLICY_CAP_KW", inherits = TRUE)) PV_POLICY_CAP_KW else 4
+  
+  #------------------------------------------------------------
+  # ① 住宅タイプ×年の「物理導入可能容量(kW)」を取得
+  #------------------------------------------------------------
+  dtype <- if (!is.null(A$dwelling_type)) as.character(A$dwelling_type) else NA_character_
+  pv_phys_kw <- lookup_pv_physical_cap_kw(dtype, current_date)
+  
+  # 取得に失敗したら 0 扱い
+  if (!is.finite(pv_phys_kw) || is.na(pv_phys_kw)) pv_phys_kw <- 0
+  
+  # ログ用に保存（物理上限そのもの：4kWカット前）
+  A$pv_phys_kw <- pv_phys_kw
+  
+  #------------------------------------------------------------
+  # ② 4kW上限を適用して、導入容量を決定（ここが本体）
+  #------------------------------------------------------------
+  inst_cap_raw <- pmin(pv_phys_kw, policy_cap_kw)
+  # ※「max を取りたい」なら pmin を pmax に変える
+  
+  if (!is.finite(inst_cap_raw) || is.na(inst_cap_raw)) inst_cap_raw <- 0
+  
+  #------------------------------------------------------------
+  # ③ 変数をエージェントに保存
+  #------------------------------------------------------------
+  A$roof_limit   <- inst_cap_raw   # 今回の「有効上限」(物理×政策)
+  A$inst_cap_raw <- inst_cap_raw   # rawも同じ（もう budget/need 調整しないので）
+  
+  # （任意）後で集計するなら、制約の種類を固定で入れておくと便利
+  A$cap_raw_source  <- "phys_cap_4kw"
+  A$cap_choice_type <- "no_choice"
+  
+  # 最終導入容量
+  A$inst_cap <- inst_cap_raw
   
   return(A)
 }
+
 
 
 utilities <- function(A, w, ags) {
@@ -996,6 +1147,12 @@ utilities <- function(A, w, ags) {
 
 decide <- function(A, threshold) {
   if (A$status == "N"){
+    
+    # 物理的に導入容量が 0 (Flat 等) の世帯は導入不可                      #shuusei20251223
+    if (is.null(A$inst_cap) || is.na(A$inst_cap) || A$inst_cap <= 0) {          #shuusei20251223
+      return(A)                                                                  #shuusei20251223
+    }                                                                            #shuusei20251223
+    
     # A is an object representing an agent
     if (A$u_tot > threshold && A$status == "N") {
       A$status[1] <- "Y"
@@ -1091,6 +1248,7 @@ soc_utility <- function(A, ags) {
   links <- length(A$network)
   no_adopters <- sum(map_int(neighbours, "status") == 1)
   u_soc <- 1/(1+exp(1.2*((links/4)-no_adopters)))  #shuusei20251128
+  return(u_soc)                                    #shuusei20251224
 }
 
 #tyousei 
@@ -1884,6 +2042,13 @@ load_data_f <- function(start_date, end_date, FiT_end_date, FiT_type, red_frac, 
     sum(tenure_region_counts$own)                                       #shuusei20251205
   region_weights <<- owner_region_weights                                #shuusei20251205
   
+  # Rooftop PV: house-type share & physical cap tables を読み込む         #shuusei20251223
+  if (!exists("hh_type_share_lut", inherits = TRUE) ||                  #shuusei20251223
+      !exists("pv_cap_type_year",  inherits = TRUE)) {                  #shuusei20251223
+    init_rooftop_pv_physical_inputs()                                   #shuusei20251223
+  }                                                                     #shuusei20251223
+  
+  
   rm(population)                                                         #shuusei20251205
   
   #---------------------------------------------------------#
@@ -2159,6 +2324,8 @@ run_model_gen <- function(number_of_agents, rn, w, threshold, n_in, dev, agent_n
                                   "own",                                #shuusei20251205
                                   assign_region()))                     #shuusei20251205
 
+  # 地域内の所得クインタイル→住宅タイプを割当（持ち家）                  #shuusei20251223
+  agents <- ensure_rooftop_pv_agent_attrs(agents)                        #shuusei20251223
   
   n_links <- 10                                                         #shuusei20251205
   
@@ -2199,9 +2366,15 @@ run_model_gen <- function(number_of_agents, rn, w, threshold, n_in, dev, agent_n
     marginal_current<<- kW_price$X3[i]   # £/kW                               #shuusei20251212
     # kW_price_current は廃止（使わない）                                     #shuusei20251212
     current_date <<- FiT$time_series[i]
-    elec_index <- which(sapply(elec_price_time$X1, function(x) grep(x, current_date)) == 1)
-    elec_price <<- elec_price_time[[elec_index, 2]]/100
-    n_owners <<- owner_occupiers[[elec_index, 2]]
+    
+    yr_now <- year(current_date)                                           #shuusei20251224
+    elec_index <- match(yr_now, elec_price_time$X1)                        #shuusei20251224
+    if (is.na(elec_index)) stop("No electricity price for year: ", yr_now) #shuusei20251224
+    elec_price <<- elec_price_time$X2[elec_index]/100                      #shuusei20251224
+    
+    owner_index <- match(yr_now, owner_occupiers$X1)                       #shuusei20251224
+    if (is.na(owner_index)) stop("No owner_occupiers for year: ", yr_now)  #shuusei20251224
+    n_owners <<- owner_occupiers$X2[owner_index]                           #shuusei20251224
     
     agents <- agents %>% map(assign_inst_cap) %>% map(utilities, w = w, ags = agents) %>% 
       map(decide, threshold = threshold)

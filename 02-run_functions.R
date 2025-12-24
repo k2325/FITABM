@@ -186,6 +186,14 @@ batch_run_func <- function(number_of_agents,                                    
 
 run_model <- function(number_of_agents, rn, w, threshold) {
   
+  # 必須データが読み込まれているかチェック（load_data() 実行漏れ対策） #shuusei20251224
+  req_objs <- c("FiT","kW_price","LF","deployment","elec_price_time","owner_occupiers") #shuusei20251224
+  missing_objs <- req_objs[!vapply(req_objs, exists, logical(1), inherits = TRUE)]     #shuusei20251224
+  if (length(missing_objs) > 0) {                                                     #shuusei20251224
+    stop("run_model() の前に load_data() を実行してください。未読込: ",                  #shuusei20251224
+         paste(missing_objs, collapse = ", "))                                        #shuusei20251224
+  }                                                                                   #shuusei20251224
+  
   time_steps <- nrow(FiT) # number of months in time series
   
   agents <- map(seq_len(number_of_agents), ~                             #shuusei20251213
@@ -193,6 +201,9 @@ run_model <- function(number_of_agents, rn, w, threshold) {
                                   assign_income("own"),                 #shuusei20251205
                                   "own",                                #shuusei20251205
                                   assign_region()))                     #shuusei20251205
+  
+  # 地域内の所得クインタイル→住宅タイプを割当（持ち家）                  #shuusei20251223
+  agents <- ensure_rooftop_pv_agent_attrs(agents)                        #shuusei20251223
   
   n_links <- 10                                                         #shuusei20251205
   
@@ -765,6 +776,8 @@ run_model_f <- function(agent_name, rn, w, threshold) {
   agents <- read_rds(paste('Data/', agent_name, "_", agent_index, ".rds", sep = ""))
   number_of_agents <- length(agents)
   
+  # （古い agents.rds に dwelling_type 等が無い場合に備えて付与）          #shuusei20251223
+  agents <- ensure_rooftop_pv_agent_attrs(agents, overwrite_dwelling_type = FALSE) #shuusei20251223
   
   incomes <- extract(agents, "income")                                   #shuusei20251118
   
