@@ -41,6 +41,38 @@ results_seq <- batch_run_func(number_of_runs    = 3,
                               use_random_params = FALSE,
                               save_name = "test")
 
+
+## === [console出力] 累積導入量（全体＆クインタイル） =============== #shuusei20251224
+stopifnot(exists("averages", inherits = TRUE), exists("deployment", inherits = TRUE)) #shuusei20251224
+
+# 1) 全体（Modelled / Real）の時系列（先頭と最後だけ表示）            #shuusei20251224
+df_total_cap <- data.frame(                                              #shuusei20251224
+  time_series = averages$time_series,                                     #shuusei20251224
+  modelled_MW = averages$tot_inst_cap,                                    #shuusei20251224
+  real_MW     = deployment$real_cap[match(averages$time_series, deployment$time_series)] #shuusei20251224
+)                                                                         #shuusei20251224
+
+cat("\n[Total cumulative capacity: head]\n")                              #shuusei20251224
+print(head(df_total_cap, 12))                                             #shuusei20251224
+cat("\n[Total cumulative capacity: tail]\n")                              #shuusei20251224
+print(tail(df_total_cap, 12))                                             #shuusei20251224
+
+# 2) クインタイル別（Q1〜Q5）の時系列（先頭と最後だけ表示）            #shuusei20251224
+cap_dec_vars <- paste0("cap_dec", 1:10)                                   #shuusei20251224
+stopifnot(all(cap_dec_vars %in% names(averages)))                         #shuusei20251224
+cap_Q_mat <- t(apply(as.matrix(averages[, cap_dec_vars]), 1, calc_quintile_cap)) #shuusei20251224
+df_quintile_cap <- cbind(time_series = averages$time_series, as.data.frame(cap_Q_mat)) #shuusei20251224
+
+cat("\n[Quintile cumulative capacity (MW): head]\n")                      #shuusei20251224
+print(head(df_quintile_cap, 12))                                          #shuusei20251224
+cat("\n[Quintile cumulative capacity (MW): tail]\n")                      #shuusei20251224
+print(tail(df_quintile_cap, 12))                                          #shuusei20251224
+## ===================================================================== #shuusei20251224
+
+
+
+
+
 #クインタイル別に
 #「inst_cap_budget が効いた割合」と「roof_limit（需要×roof factor）が効いた割合」
 #「raw inst_cap > 4kW の世帯のうち、4kW を採用した割合」と「大容量を採用した割合」
@@ -49,7 +81,6 @@ plot_budget_roof_by_quintile(dmy("01oct2016"))
 
 #デシル別「導入世帯あたり平均導入量」の時系列
 load_plot_sim_data("test")
-
 
 # The default number of agents is 5000, and the default number of runs is 100. 
 # So just running batch_run_func() does 100 runs with 5000 agents. 
